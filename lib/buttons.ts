@@ -189,3 +189,51 @@ export function isCollapsed(buttonCount: number, stored: boolean): boolean {
 export function roomForChips(available: number, hasToggle: boolean, gap: number, toggleWidth: number): number {
   return hasToggle ? Math.max(0, available - toggleWidth - gap) : available;
 }
+
+/** Where to ask for skills: a thread, or the provider/project a new-thread composer has selected. */
+export type CommandTarget =
+  | { kind: "thread"; threadId: string }
+  | { kind: "new-thread"; projectId: string; providerId: string; environmentId: string | null; hostId: string | null };
+
+interface TargetScope {
+  kind: string;
+  threadId?: string;
+}
+
+interface TargetSelection {
+  projectId?: string;
+  providerId?: string;
+  environment?: { type: string; environmentId?: string; hostId?: string };
+}
+
+/**
+ * The target for a composer's skills, or null when it cannot be known yet (a
+ * new-thread composer whose project or provider is not settled) or never
+ * applies (queued-message editors).
+ */
+export function resolveCommandTarget(scope: TargetScope, selection: TargetSelection | null | undefined): CommandTarget | null {
+  if (scope.kind === "thread") return scope.threadId === undefined ? null : { kind: "thread", threadId: scope.threadId };
+  if (scope.kind !== "new-thread") return null;
+  if (selection?.projectId === undefined || selection.providerId === undefined) return null;
+  const environment = selection.environment;
+  return {
+    kind: "new-thread",
+    projectId: selection.projectId,
+    providerId: selection.providerId,
+    environmentId: environment?.type === "reuse" ? (environment.environmentId ?? null) : null,
+    hostId: environment?.type === "host" ? (environment.hostId ?? null) : null,
+  };
+}
+
+/** A stable string for a target, so effects re-run exactly when provider/project/environment change. */
+export function targetKey(target: CommandTarget | null): string {
+  return target === null ? "none" : JSON.stringify(target);
+}
+
+/**
+ * What a pill needs when the skill list is unknown (a new-thread composer whose
+ * list could not be read): a user-level skill, as bb's `/` menu inserts for one.
+ */
+export function assumedSkillCommand(name: string): SkillCommand {
+  return { name, source: "skill", origin: "user", argumentHint: null };
+}

@@ -3,11 +3,14 @@ import test from "node:test";
 import {
   canAddButton,
   chipLabel,
+  assumedSkillCommand,
   composeDraft,
   isCollapsed,
   readStoredCollapsed,
+  resolveCommandTarget,
   roomForChips,
   showToggle,
+  targetKey,
   MAX_BUTTONS,
   readStoredButtons,
   validateButtons,
@@ -157,4 +160,48 @@ test("the toggle's width is reserved before chips are fitted", () => {
   // 3 chips of 50 + 2 gaps = 158 fit in 200 alone, but not beside the toggle in 150
   assert.equal(visibleChipCount([50, 50, 50], roomForChips(200, false, 4, 24), 4, 28), 3);
   assert.equal(visibleChipCount([50, 50, 50], roomForChips(170, true, 4, 24), 4, 28), 2);
+});
+
+test("a thread composer targets its thread", () => {
+  assert.deepEqual(resolveCommandTarget({ kind: "thread", threadId: "thr_1" }, null), { kind: "thread", threadId: "thr_1" });
+  assert.equal(resolveCommandTarget({ kind: "thread" }, null), null);
+});
+
+test("a queued-message editor has no target", () => {
+  assert.equal(resolveCommandTarget({ kind: "queued-message", threadId: "thr_1" }, { projectId: "p", providerId: "x" }), null);
+});
+
+test("a new-thread composer targets its selected project, provider and environment", () => {
+  const scope = { kind: "new-thread" };
+  assert.equal(resolveCommandTarget(scope, null), null);
+  assert.equal(resolveCommandTarget(scope, { projectId: "p1" }), null);
+  assert.deepEqual(resolveCommandTarget(scope, { projectId: "p1", providerId: "claude-code" }), {
+    kind: "new-thread",
+    projectId: "p1",
+    providerId: "claude-code",
+    environmentId: null,
+    hostId: null,
+  });
+  assert.deepEqual(
+    resolveCommandTarget(scope, { projectId: "p1", providerId: "codex", environment: { type: "reuse", environmentId: "env_1" } }),
+    { kind: "new-thread", projectId: "p1", providerId: "codex", environmentId: "env_1", hostId: null },
+  );
+  assert.deepEqual(
+    resolveCommandTarget(scope, { projectId: "p1", providerId: "codex", environment: { type: "host", hostId: "host_1" } }),
+    { kind: "new-thread", projectId: "p1", providerId: "codex", environmentId: null, hostId: "host_1" },
+  );
+});
+
+test("the target key changes with provider, project or environment, and only then", () => {
+  const scope = { kind: "new-thread" };
+  const a = resolveCommandTarget(scope, { projectId: "p1", providerId: "claude-code" });
+  const same = resolveCommandTarget(scope, { projectId: "p1", providerId: "claude-code" });
+  assert.equal(targetKey(a), targetKey(same));
+  assert.notEqual(targetKey(a), targetKey(resolveCommandTarget(scope, { projectId: "p1", providerId: "codex" })));
+  assert.notEqual(targetKey(a), targetKey(resolveCommandTarget(scope, { projectId: "p2", providerId: "claude-code" })));
+  assert.equal(targetKey(null), "none");
+});
+
+test("an assumed command is a user skill with no argument hint", () => {
+  assert.deepEqual(assumedSkillCommand("review"), { name: "review", source: "skill", origin: "user", argumentHint: null });
 });
