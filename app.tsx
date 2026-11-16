@@ -17,10 +17,14 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   assumedSkillCommand,
+  chipAccessibleName,
   chipLabel,
+  chipTooltip,
+  compactChipText,
   composeWithSelection,
   fadeMask,
   isCollapsed,
+  isCompactComposer,
   keepComposerFocus,
   isSelectionLive,
   normalizeSelectionText,
@@ -257,6 +261,12 @@ function liveSelection(editor: HTMLElement | null): SelectionInput | null {
   return describeSelection(selection.getRangeAt(0), selection.toString(), editor);
 }
 
+// Emoji-only chips on narrow composers: touch-sized (32px tall) but tight.
+const compactChipClass =
+  "inline-flex h-8 min-w-[30px] shrink-0 items-center justify-center whitespace-nowrap rounded-md px-1 text-sm leading-none text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+const COMPACT_GAP = 2;
+const COMPACT_FADE = 12;
+
 const chipClass =
   "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
@@ -279,6 +289,7 @@ function SkillButtonsAction() {
   const contentRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
+  const [compact, setCompact] = useState(false);
   const busy = composer.isSubmitting;
   const list = buttons ?? [];
   const signature = list.map((button) => `${button.id}:${chipLabel(button)}`).join("|");
@@ -303,6 +314,8 @@ function SkillButtonsAction() {
     const observer = new ResizeObserver(() => update());
     const update = () => {
       const room = availableWidth(root);
+      const formWidth = root.closest("form")?.getBoundingClientRect().width ?? null;
+      setCompact(isCompactComposer(formWidth));
       const next = room === null ? null : stripWidth(content.getBoundingClientRect().width, roomForChips(room.width, toggle, CHIP_GAP, TOGGLE_WIDTH));
       setWidth((previous) => (previous === next ? previous : next));
       updateEdges();
@@ -316,6 +329,8 @@ function SkillButtonsAction() {
       }
     };
     observer.observe(root);
+    const form = root.closest("form");
+    if (form !== null) observer.observe(form);
     observer.observe(content);
     observer.observe(scroller);
     update();
@@ -402,10 +417,10 @@ function SkillButtonsAction() {
       <button
         key={button.id}
         type="button"
-        className={chipClass}
+        className={compact ? compactChipClass : chipClass}
         disabled={reason !== null}
-        title={reason ?? `${button.mode === "send" ? "Send" : "Insert"} /${button.skill}${button.args === "" ? "" : ` ${button.args}`}`}
-        aria-label={`/${button.skill}`}
+        title={reason ?? chipTooltip(button, compact)}
+        aria-label={chipAccessibleName(button, compact)}
         onPointerDown={() => {
           pointerSelection.current = liveSelection(editorOf(rootRef.current));
         }}
@@ -418,11 +433,11 @@ function SkillButtonsAction() {
           void run(button, selection);
         }}
       >
-        {chipLabel(button)}
+        {compact ? compactChipText(button) : chipLabel(button)}
       </button>
     );
   };
-  const mask = fadeMask(edges);
+  const mask = fadeMask(edges, compact ? COMPACT_FADE : 24);
 
   return (
     <div ref={attach} className="flex min-w-0 items-center justify-end" style={{ gap: CHIP_GAP }}>
@@ -431,9 +446,9 @@ function SkillButtonsAction() {
           ref={scrollerRef}
           onScroll={updateEdges}
           className="flex overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden"
-          style={{ scrollbarWidth: "none", scrollPaddingInline: 24, overscrollBehaviorX: "contain", WebkitMaskImage: mask, maskImage: mask }}
+          style={{ scrollbarWidth: "none", scrollPaddingInline: compact ? COMPACT_FADE : 24, overscrollBehaviorX: "contain", WebkitMaskImage: mask, maskImage: mask }}
         >
-          <div ref={contentRef} className="flex w-max items-center" style={{ gap: CHIP_GAP }}>
+          <div ref={contentRef} className="flex w-max items-center" style={{ gap: compact ? COMPACT_GAP : CHIP_GAP }}>
             {list.map(chip)}
           </div>
         </div>
