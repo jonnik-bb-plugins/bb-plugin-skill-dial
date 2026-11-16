@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-skill-buttons",
-  "version": "0.1.5",
+  "version": "0.1.0",
   "type": "module",
   "engines": {
     "bb": ">=0.49",
