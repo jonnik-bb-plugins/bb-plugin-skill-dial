@@ -229,12 +229,6 @@ export function scrollEdges(scrollLeft: number, clientWidth: number, scrollWidth
   };
 }
 
-/** Where an arrow click scrolls to: roughly one strip width, clamped to the content. */
-export function pageScrollTarget(scrollLeft: number, clientWidth: number, scrollWidth: number, direction: -1 | 1): number {
-  const step = Math.max(1, Math.round(clientWidth * 0.8));
-  return Math.min(Math.max(0, scrollWidth - clientWidth), Math.max(0, scrollLeft + direction * step));
-}
-
 /**
  * Horizontal pixels a wheel event should scroll the strip by: a vertical wheel
  * or trackpad scroll maps to horizontal; an event that is already mostly

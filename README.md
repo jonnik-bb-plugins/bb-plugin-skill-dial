@@ -9,8 +9,7 @@ composer.
   action row, left of the send button. The chips form a horizontally scrollable
   strip that takes the room between the model controls and mic/send: vertical
   wheel or trackpad scroll over it scrolls sideways, touch swipe works, the
-  scrollbar is hidden, clipped edges fade, and small arrows (shown only where
-  there is more to see) page through it. Focusing a clipped chip with the
+  scrollbar is hidden, clipped edges fade. Focusing a clipped chip with the
   keyboard scrolls it into view. The composer keeps its height and no built-in
   control is covered.
 - Settings (Settings → Plugins → Skill Buttons → **Skill buttons**): per button

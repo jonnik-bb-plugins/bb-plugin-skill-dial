@@ -29,7 +29,6 @@ import {
   MAX_EMOJI,
   MAX_LABEL,
   newButtonId,
-  pageScrollTarget,
   resolveCommandTarget,
   roomForChips,
   scrollEdges,
@@ -261,9 +260,6 @@ function liveSelection(editor: HTMLElement | null): SelectionInput | null {
 const chipClass =
   "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
-const arrowClass =
-  "absolute top-1/2 z-10 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground";
-
 function SkillButtonsAction() {
   const composer = useComposer();
   const { rpc, buttons, collapsed: storedCollapsed, setCollapsed } = useButtons();
@@ -367,12 +363,6 @@ function SkillButtonsAction() {
     return isSelectionLive(selection, composer.draft.text) ? selection : null;
   };
 
-  const scrollPage = (direction: -1 | 1) => {
-    const scroller = scrollerRef.current;
-    if (scroller === null) return;
-    scroller.scrollTo({ left: pageScrollTarget(scroller.scrollLeft, scroller.clientWidth, scroller.scrollWidth, direction), behavior: "smooth" });
-  };
-
   const run = useCallback(
     async (button: SkillButton, selection: SelectionInput | null) => {
       if (commands.status !== "ready" && commands.status !== "unknown") return;
@@ -441,22 +431,12 @@ function SkillButtonsAction() {
           ref={scrollerRef}
           onScroll={updateEdges}
           className="flex overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden"
-          style={{ scrollbarWidth: "none", scrollPaddingInline: 26, overscrollBehaviorX: "contain", WebkitMaskImage: mask, maskImage: mask }}
+          style={{ scrollbarWidth: "none", scrollPaddingInline: 24, overscrollBehaviorX: "contain", WebkitMaskImage: mask, maskImage: mask }}
         >
           <div ref={contentRef} className="flex w-max items-center" style={{ gap: CHIP_GAP }}>
             {list.map(chip)}
           </div>
         </div>
-        {edges.left ? (
-          <button type="button" tabIndex={-1} className={cn(arrowClass, "left-0")} aria-label="Scroll skill buttons left" onMouseDown={keepComposerFocus} onClick={() => scrollPage(-1)}>
-            <Icon name="ChevronLeft" className="size-3" />
-          </button>
-        ) : null}
-        {edges.right ? (
-          <button type="button" tabIndex={-1} className={cn(arrowClass, "right-0")} aria-label="Scroll skill buttons right" onMouseDown={keepComposerFocus} onClick={() => scrollPage(1)}>
-            <Icon name="ChevronRight" className="size-3" />
-          </button>
-        ) : null}
       </div>
       {toggle ? (
         <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: TOGGLE_WIDTH }} aria-label="Hide skill buttons" title="Hide skill buttons" onMouseDown={keepComposerFocus} onClick={() => setCollapsed(true)}>

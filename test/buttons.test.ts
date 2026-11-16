@@ -5,7 +5,6 @@ import {
   assumedSkillCommand,
   fadeMask,
   isWheelNotch,
-  pageScrollTarget,
   scrollEdges,
   stripWidth,
   wheelToScroll,
@@ -175,15 +174,6 @@ test("scroll edges show only where content is clipped", () => {
   assert.deepEqual(scrollEdges(0.4, 200, 200.8), { left: false, right: false });
 });
 
-test("an arrow click scrolls about one strip width and stays in range", () => {
-  assert.equal(pageScrollTarget(0, 200, 1000, 1), 160);
-  assert.equal(pageScrollTarget(160, 200, 1000, 1), 320);
-  assert.equal(pageScrollTarget(700, 200, 1000, 1), 800);
-  assert.equal(pageScrollTarget(100, 200, 1000, -1), 0);
-  assert.equal(pageScrollTarget(500, 200, 1000, -1), 340);
-  assert.equal(pageScrollTarget(0, 200, 100, 1), 0);
-});
-
 test("a vertical wheel maps to horizontal scroll; a horizontal one is left alone", () => {
   assert.equal(wheelToScroll(0, 100, 0), 100);
   assert.equal(wheelToScroll(0, -3, 1), -48);
@@ -351,9 +341,15 @@ test("every button the strip renders holds the composer's focus", async () => {
   const { readFileSync } = await import("node:fs");
   const source = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
   const starts = [...source.matchAll(/<button\b/g)].map((match) => match.index ?? 0);
-  assert.equal(starts.length, 5, "show chip, skill chips, both arrows, hide toggle");
+  assert.equal(starts.length, 3, "show chip, skill chips, hide toggle");
   for (const start of starts) {
     const opening = source.slice(start, source.indexOf("\n      >", start) > 0 ? Math.min(source.indexOf("\n      >", start), start + 900) : start + 900);
     assert.match(opening, /onMouseDown=\{keepComposerFocus\}/, opening.slice(0, 80));
   }
+});
+
+test("the strip has no scroll arrow buttons", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /Scroll skill buttons/);
 });
