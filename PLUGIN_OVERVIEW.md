@@ -7,6 +7,8 @@ Launch a skill with one click from the thread composer.
   scrollable strip with edge fades and arrows; the composer never grows taller.
 - A **Skill buttons** section in the plugin's settings: pick a skill, a label
   and emoji, a mode and optional args; reorder and delete buttons.
+- Select text in the chat and press a chip: the selection becomes the skill's
+  argument. Select text in your draft and the skill goes right before it.
 - A chevron collapses the chips into one compact chip; the state is remembered
   on the server across reloads and devices.
 - Two modes per button. **Insert** puts the skill pill and args at the start of

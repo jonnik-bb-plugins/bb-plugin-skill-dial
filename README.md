@@ -24,6 +24,13 @@ composer.
 - **Send** mode: the same composition, then `useComposer().submit()`, so
   attachments, queueing and send checks behave as for Enter. An empty draft sends
   the skill (and args) alone.
+- **Selected text is the parameter.** Select text before pressing a chip. Text selected
+  outside the composer (in the chat, say) becomes the skill's argument, line breaks kept:
+  the draft turns into the skill pill, the button's args, the selected text, then your
+  existing draft. Text selected inside the draft gets the skill pill and args placed
+  right before it, and the rest of the draft stays put. With nothing (or only
+  whitespace) selected, a chip works as before. Keyboard activation uses the selection
+  made just before focus moved onto the chip, if it still stands.
 - A small chevron after the strip (outside the scroll area, always visible) collapses everything into one
   compact chip (bolt + button count, tooltip "Show skill buttons"); clicking it
   expands again. It shows only with 2 or more buttons, and its state is global and stored on the server, so it follows you across
