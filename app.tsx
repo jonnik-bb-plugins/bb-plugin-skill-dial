@@ -390,7 +390,7 @@ function SkillButtonsAction() {
       </div>
       {toggle ? (
         <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: TOGGLE_WIDTH }} aria-label="Hide skill buttons" title="Hide skill buttons" onClick={() => setCollapsed(true)}>
-          <Icon name="ChevronsRight" className="size-3.5" />
+          <span aria-hidden="true" className="text-sm leading-none">»</span>
         </button>
       ) : null}
     </div>
