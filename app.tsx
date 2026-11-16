@@ -18,9 +18,11 @@ import { cn } from "@/lib/utils";
 import {
   assumedSkillCommand,
   chipLabel,
-  composeDraft,
+  composeWithSelection,
   fadeMask,
   isCollapsed,
+  isSelectionLive,
+  normalizeSelectionText,
   isWheelNotch,
   MAX_ARGS,
   MAX_EMOJI,
@@ -38,6 +40,7 @@ import {
   type ButtonMode,
   type CommandTarget,
   type SkillButton,
+  type SelectionInput,
   type SkillCommand,
 } from "./lib/buttons.ts";
 
@@ -226,6 +229,34 @@ function trimSlotHeight(root: HTMLElement): () => void {
   };
 }
 
+/** The composer's own editor, found from one of our elements inside its form. */
+function editorOf(element: HTMLElement | null): HTMLElement | null {
+  return element?.closest("form")?.querySelector<HTMLElement>("[contenteditable=true]") ?? null;
+}
+
+/**
+ * A selection as the composition logic wants it: outside the composer just its
+ * text; inside, also the editor's text before it, to tell repeats apart.
+ */
+function describeSelection(range: Range, text: string, editor: HTMLElement | null): SelectionInput | null {
+  if (normalizeSelectionText(text) === "") return null;
+  if (editor !== null && editor.contains(range.startContainer) && editor.contains(range.endContainer)) {
+    const head = document.createRange();
+    head.selectNodeContents(editor);
+    head.setEnd(range.startContainer, range.startOffset);
+    return { kind: "composer", text, before: head.toString() };
+  }
+  return { kind: "outside", text };
+}
+
+function liveSelection(editor: HTMLElement | null): SelectionInput | null {
+  const selection = document.getSelection();
+  if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) return null;
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return null;
+  return describeSelection(selection.getRangeAt(0), selection.toString(), editor);
+}
+
 const chipClass =
   "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
@@ -244,6 +275,9 @@ function SkillButtonsAction() {
     rootRef.current = element;
     if (element !== null) untrimRef.current = trimSlotHeight(element);
   }, []);
+  // The last selection made before focus moved onto a chip, for keyboard activation.
+  const lastSelection = useRef<{ range: Range; text: string } | null>(null);
+  const pointerSelection = useRef<SelectionInput | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
@@ -291,6 +325,23 @@ function SkillButtonsAction() {
     return () => observer.disconnect();
   }, [signature, toggle, collapsed, updateEdges]);
 
+  useEffect(() => {
+    const onChange = () => {
+      const selection = document.getSelection();
+      const usable = selection !== null && selection.rangeCount > 0 && !selection.isCollapsed && normalizeSelectionText(selection.toString()) !== "";
+      if (!usable) {
+        // Focus moving onto a chip may collapse the selection; anywhere else it is gone for good.
+        if (rootRef.current?.contains(document.activeElement) !== true) lastSelection.current = null;
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      if (rootRef.current?.contains(range.commonAncestorContainer) === true) return;
+      lastSelection.current = { range: range.cloneRange(), text: selection.toString() };
+    };
+    document.addEventListener("selectionchange", onChange);
+    return () => document.removeEventListener("selectionchange", onChange);
+  }, []);
+
   // A vertical wheel or trackpad scroll over the strip scrolls it sideways.
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -307,6 +358,14 @@ function SkillButtonsAction() {
     return () => scroller.removeEventListener("wheel", onWheel);
   }, [collapsed, list.length === 0]);
 
+  // Keyboard activation: the selection made before focus moved here, if it still stands.
+  const keyboardSelection = (): SelectionInput | null => {
+    const last = lastSelection.current;
+    if (last === null || !last.range.startContainer.isConnected) return null;
+    const selection = describeSelection(last.range, last.text, editorOf(rootRef.current));
+    return isSelectionLive(selection, composer.draft.text) ? selection : null;
+  };
+
   const scrollPage = (direction: -1 | 1) => {
     const scroller = scrollerRef.current;
     if (scroller === null) return;
@@ -314,12 +373,12 @@ function SkillButtonsAction() {
   };
 
   const run = useCallback(
-    async (button: SkillButton) => {
+    async (button: SkillButton, selection: SelectionInput | null) => {
       if (commands.status !== "ready" && commands.status !== "unknown") return;
       const command = commands.status === "ready" ? commands.byName.get(button.skill) : assumedSkillCommand(button.skill);
       if (command === undefined) return;
       const current = composer.draft;
-      const next = composeDraft(current, button, command, { trimEnd: button.mode === "send" });
+      const next = composeWithSelection(current, button, command, selection, { trimEnd: button.mode === "send" });
       try {
         composer.replace({ text: next.text, mentions: next.mentions as ComposerMention[] });
         if (button.mode === "insert") {
@@ -356,7 +415,17 @@ function SkillButtonsAction() {
         disabled={reason !== null}
         title={reason ?? `${button.mode === "send" ? "Send" : "Insert"} /${button.skill}${button.args === "" ? "" : ` ${button.args}`}`}
         aria-label={`/${button.skill}`}
-        onClick={() => void run(button)}
+        onPointerDown={() => {
+          pointerSelection.current = liveSelection(editorOf(rootRef.current));
+        }}
+        // Keep the selection and the composer's caret: pressing a chip must not clear them.
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={(event) => {
+          let selection = pointerSelection.current;
+          pointerSelection.current = null;
+          if (event.detail === 0) selection = keyboardSelection();
+          void run(button, selection);
+        }}
       >
         {chipLabel(button)}
       </button>
@@ -474,7 +543,7 @@ function SettingsSection() {
         ))}
       </datalist>
       <p className="text-xs text-muted-foreground">
-        Chips in a scrollable strip next to the composer's send button, in this order. <b>Insert</b> puts the skill and args at the start of the
+        Chips in a scrollable strip next to the composer's send button, in this order. Select text first and a chip uses it as the skill's parameter: text selected in the chat goes after the skill, text selected in the draft gets the skill right before it. <b>Insert</b> puts the skill and args at the start of the
         draft; <b>Send</b> submits them with the draft as one message. Skills come from{" "}
         {commands.status === "ready" ? "the most recent thread's provider" : "…"}; you can also type a name.
         {commands.status === "error" ? ` (Skill list unavailable: ${commands.message})` : ""}
