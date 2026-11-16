@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import {
   canAddButton,
   chipLabel,
+  assumedSkillCommand,
   composeDraft,
   isCollapsed,
   MAX_ARGS,
@@ -27,11 +28,14 @@ import {
   MAX_EMOJI,
   MAX_LABEL,
   newButtonId,
+  resolveCommandTarget,
   roomForChips,
   showToggle,
+  targetKey,
   validateButtons,
   visibleChipCount,
   type ButtonMode,
+  type CommandTarget,
   type SkillButton,
   type SkillCommand,
 } from "./lib/buttons.ts";
@@ -79,28 +83,43 @@ function useButtons() {
 type CommandsState =
   | { status: "loading" }
   | { status: "error"; message: string }
+  // New-thread composer whose skill list could not be read: availability is unknown, chips stay enabled.
+  | { status: "unknown" }
   | { status: "ready"; byName: Map<string, CommandInfo> };
 
-/** What the thread's provider offers; `null` thread id: the latest thread's. */
-function useCommands(rpc: Rpc, threadId: string | null): CommandsState {
-  const [state, setState] = useState<CommandsState>({ status: "loading" });
+type ListTarget = CommandTarget | { kind: "latest" };
+
+/**
+ * What bb's `/` menu offers for `target`, asked again when the provider,
+ * project or environment of a new-thread composer changes. A null target (not
+ * settled yet) is unknown; so is a new-thread list that cannot be read.
+ */
+function useCommands(rpc: Rpc, target: ListTarget | null): CommandsState {
+  const [state, setState] = useState<CommandsState>(target === null ? { status: "unknown" } : { status: "loading" });
+  const key = target === null ? "none" : target.kind === "latest" ? "latest" : targetKey(target);
   useEffect(() => {
+    if (target === null) {
+      setState({ status: "unknown" });
+      return;
+    }
     let cancelled = false;
+    const fail = (message: string): CommandsState =>
+      target.kind === "new-thread" ? { status: "unknown" } : { status: "error", message };
     setState({ status: "loading" });
-    rpc.call("listCommands", { threadId }).then(
+    rpc.call("listCommands", { target }).then(
       (result) => {
         if (cancelled) return;
-        if (result.error !== null) setState({ status: "error", message: result.error });
+        if (result.error !== null) setState(fail(result.error));
         else setState({ status: "ready", byName: new Map(result.commands.map((command) => [command.name, command])) });
       },
       (cause) => {
-        if (!cancelled) setState({ status: "error", message: cause instanceof Error ? cause.message : String(cause) });
+        if (!cancelled) setState(fail(cause instanceof Error ? cause.message : String(cause)));
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [rpc, threadId]);
+  }, [rpc, key]);
   return state;
 }
 
@@ -108,6 +127,7 @@ function useCommands(rpc: Rpc, threadId: string | null): CommandsState {
 function disabledReason(button: SkillButton, commands: CommandsState, busy: boolean): string | null {
   if (busy) return "The composer is busy";
   if (commands.status === "loading") return "Loading skills…";
+  if (commands.status === "unknown") return null;
   if (commands.status === "error") return `Skills unavailable: ${commands.message}`;
   if (!commands.byName.has(button.skill)) return `Skill "${button.skill}" is not available for this thread's provider`;
   return null;
@@ -189,8 +209,7 @@ const chipClass =
 function SkillButtonsAction() {
   const composer = useComposer();
   const { rpc, buttons, collapsed: storedCollapsed, setCollapsed } = useButtons();
-  const threadId = composer.scope.kind === "thread" ? composer.scope.threadId : null;
-  const commands = useCommands(rpc, threadId);
+  const commands = useCommands(rpc, resolveCommandTarget(composer.scope, composer.selection));
   const portalProps = usePortalScopeProps();
   const rootRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
@@ -228,8 +247,8 @@ function SkillButtonsAction() {
 
   const run = useCallback(
     async (button: SkillButton) => {
-      if (commands.status !== "ready") return;
-      const command = commands.byName.get(button.skill);
+      if (commands.status !== "ready" && commands.status !== "unknown") return;
+      const command = commands.status === "ready" ? commands.byName.get(button.skill) : assumedSkillCommand(button.skill);
       if (command === undefined) return;
       const current = composer.draft;
       const next = composeDraft(current, button, command, { trimEnd: button.mode === "send" });
@@ -331,7 +350,7 @@ const selectClass =
 
 function SettingsSection() {
   const { rpc, buttons } = useButtons();
-  const commands = useCommands(rpc, null);
+  const commands = useCommands(rpc, { kind: "latest" });
   const [rows, setRows] = useState<SkillButton[] | null>(null);
   const [saved, setSaved] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -461,7 +480,7 @@ export default definePluginApp((app) => {
   });
   app.composer.customize({
     id: "skill-buttons",
-    scopes: ["thread"],
+    scopes: ["thread", "new-thread"],
     actions: [{ id: "chips", component: SkillButtonsAction }],
   });
 });
