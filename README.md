@@ -5,24 +5,28 @@ composer.
 
 ## What you get
 
-- Up to **6** compact chips (emoji + short label) in the composer's bottom action
-  row, left of the send button. Chips that do not fit collapse into a **⋯** menu,
-  so the composer keeps its height and no built-in control is covered.
+- Any number of compact chips (emoji + short label) in the composer's bottom
+  action row, left of the send button. The chips form a horizontally scrollable
+  strip that takes the room between the model controls and mic/send: vertical
+  wheel or trackpad scroll over it scrolls sideways, touch swipe works, the
+  scrollbar is hidden, clipped edges fade, and small arrows (shown only where
+  there is more to see) page through it. Focusing a clipped chip with the
+  keyboard scrolls it into view. The composer keeps its height and no built-in
+  control is covered.
 - Settings (Settings → Plugins → Skill Buttons → **Skill buttons**): per button
   a skill (suggestions from the most recent thread's `/` list, free text also
   accepted), emoji, label, mode and optional args; move up/down and delete.
-  The sixth button is the last one: **Add button** is disabled at 6/6, and the
-  server rejects a longer list too.
+  There is no limit on the number of buttons; the action bar with **Add button**
+  and **Save** stays visible while a long list scrolls.
 - **Insert** mode: the skill pill (the one bb's `/` menu inserts) plus the args go
   to the start of the current draft; the rest of the draft stays; the composer is
   focused; nothing is sent.
 - **Send** mode: the same composition, then `useComposer().submit()`, so
   attachments, queueing and send checks behave as for Enter. An empty draft sends
   the skill (and args) alone.
-- A small chevron at the end of the chip group collapses everything into one
+- A small chevron after the strip (outside the scroll area, always visible) collapses everything into one
   compact chip (bolt + button count, tooltip "Show skill buttons"); clicking it
-  expands again. It shows only with 2 or more buttons, is never part of the "⋯"
-  menu, and its state is global and stored on the server, so it follows you across
+  expands again. It shows only with 2 or more buttons, and its state is global and stored on the server, so it follows you across
   reloads, browsers and devices.
 - A chip is disabled, with a tooltip, while the skill list loads or fails, or
   when the skill is not offered for the thread's provider.
@@ -36,8 +40,8 @@ exist. `Send` there uses the composer's normal submit, which creates the thread.
 
 ## How it works
 
-- `lib/buttons.ts` — the button schema and 6-button cap, draft composition for
-  both modes, the chips/overflow split and the collapse rules. Pure; covered by `test/`.
+- `lib/buttons.ts` — the button schema, draft composition for both
+  modes, strip sizing and scrolling rules, and the collapse rules. Pure; covered by `test/`.
 - `server.ts` — stores the list in `bb.storage.kv` (RPC `getButtons` /
   `saveButtons`, `setCollapsed`, realtime `buttons-changed`) and lists the commands and
   skills for a thread or a new-thread selection with `bb.sdk.projects.commands`, as bb's own `/` menu does (RPC
@@ -55,7 +59,7 @@ bb ≥ 0.49 (Plugin SDK ≥ 0.6.132). Uses the experimental composer API.
 
 ```
 npm install
-npm test            # node --test: schema/cap and draft composition
+npm test            # node --test: schema, draft composition, strip and collapse rules
 npm run typecheck
 bb plugin build
 bb plugin install .

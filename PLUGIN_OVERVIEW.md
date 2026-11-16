@@ -2,10 +2,9 @@ Launch a skill with one click from the thread composer.
 
 ## What you get
 
-- Up to six compact chips (emoji and short label) in the thread and new-thread
-  composers' action row,
-  left of the send button. When the row is too narrow, extra chips collapse into
-  a "⋯" menu; the composer never grows taller.
+- Any number of compact chips (emoji and short label) in the thread and
+  new-thread composers' action row, left of the send button, in a horizontally
+  scrollable strip with edge fades and arrows; the composer never grows taller.
 - A **Skill buttons** section in the plugin's settings: pick a skill, a label
   and emoji, a mode and optional args; reorder and delete buttons.
 - A chevron collapses the chips into one compact chip; the state is remembered
