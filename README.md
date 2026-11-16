@@ -19,6 +19,11 @@ composer.
 - **Send** mode: the same composition, then `useComposer().submit()`, so
   attachments, queueing and send checks behave as for Enter. An empty draft sends
   the skill (and args) alone.
+- A small chevron at the end of the chip group collapses everything into one
+  compact chip (bolt + button count, tooltip "Show skill buttons"); clicking it
+  expands again. It shows only with 2 or more buttons, is never part of the "⋯"
+  menu, and its state is global and stored on the server, so it follows you across
+  reloads, browsers and devices.
 - A chip is disabled, with a tooltip, while the skill list loads or fails, or
   when the skill is not offered for the thread's provider.
 
@@ -28,9 +33,9 @@ composers only (not queued-message editors or the new-thread composer).
 ## How it works
 
 - `lib/buttons.ts` — the button schema and 6-button cap, draft composition for
-  both modes, and the chips/overflow split. Pure; covered by `test/`.
+  both modes, the chips/overflow split and the collapse rules. Pure; covered by `test/`.
 - `server.ts` — stores the list in `bb.storage.kv` (RPC `getButtons` /
-  `saveButtons`, realtime `buttons-changed`) and lists a thread's commands and
+  `saveButtons`, `setCollapsed`, realtime `buttons-changed`) and lists a thread's commands and
   skills with `bb.sdk.projects.commands`, as bb's own `/` menu does (RPC
   `listCommands`, cached 30 s).
 - `app.tsx` — `app.composer.customize({ actions })` for the chips and

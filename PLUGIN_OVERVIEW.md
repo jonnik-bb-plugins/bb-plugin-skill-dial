@@ -7,6 +7,8 @@ Launch a skill with one click from the thread composer.
   a "⋯" menu; the composer never grows taller.
 - A **Skill buttons** section in the plugin's settings: pick a skill, a label
   and emoji, a mode and optional args; reorder and delete buttons.
+- A chevron collapses the chips into one compact chip; the state is remembered
+  on the server across reloads and devices.
 - Two modes per button. **Insert** puts the skill pill and args at the start of
   the draft and focuses the composer. **Send** prepends them to the draft and
   submits it as one message, or submits the skill alone when the draft is empty.
