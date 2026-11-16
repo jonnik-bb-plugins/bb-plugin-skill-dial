@@ -21,6 +21,7 @@ import {
   composeWithSelection,
   fadeMask,
   isCollapsed,
+  keepComposerFocus,
   isSelectionLive,
   normalizeSelectionText,
   isWheelNotch,
@@ -397,7 +398,7 @@ function SkillButtonsAction() {
   if (collapsed) {
     return (
       <div ref={attach} className="flex min-w-0 flex-1 items-center justify-end">
-        <button type="button" className={cn(chipClass, "px-2")} aria-label="Show skill buttons" title="Show skill buttons" onClick={() => setCollapsed(false)}>
+        <button type="button" className={cn(chipClass, "px-2")} aria-label="Show skill buttons" title="Show skill buttons" onMouseDown={keepComposerFocus} onClick={() => setCollapsed(false)}>
           <Icon name="Zap" className="size-3.5" />
           <span>{list.length}</span>
         </button>
@@ -419,7 +420,7 @@ function SkillButtonsAction() {
           pointerSelection.current = liveSelection(editorOf(rootRef.current));
         }}
         // Keep the selection and the composer's caret: pressing a chip must not clear them.
-        onMouseDown={(event) => event.preventDefault()}
+        onMouseDown={keepComposerFocus}
         onClick={(event) => {
           let selection = pointerSelection.current;
           pointerSelection.current = null;
@@ -447,18 +448,18 @@ function SkillButtonsAction() {
           </div>
         </div>
         {edges.left ? (
-          <button type="button" tabIndex={-1} className={cn(arrowClass, "left-0")} aria-label="Scroll skill buttons left" onClick={() => scrollPage(-1)}>
+          <button type="button" tabIndex={-1} className={cn(arrowClass, "left-0")} aria-label="Scroll skill buttons left" onMouseDown={keepComposerFocus} onClick={() => scrollPage(-1)}>
             <Icon name="ChevronLeft" className="size-3" />
           </button>
         ) : null}
         {edges.right ? (
-          <button type="button" tabIndex={-1} className={cn(arrowClass, "right-0")} aria-label="Scroll skill buttons right" onClick={() => scrollPage(1)}>
+          <button type="button" tabIndex={-1} className={cn(arrowClass, "right-0")} aria-label="Scroll skill buttons right" onMouseDown={keepComposerFocus} onClick={() => scrollPage(1)}>
             <Icon name="ChevronRight" className="size-3" />
           </button>
         ) : null}
       </div>
       {toggle ? (
-        <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: TOGGLE_WIDTH }} aria-label="Hide skill buttons" title="Hide skill buttons" onClick={() => setCollapsed(true)}>
+        <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: TOGGLE_WIDTH }} aria-label="Hide skill buttons" title="Hide skill buttons" onMouseDown={keepComposerFocus} onClick={() => setCollapsed(true)}>
           <span aria-hidden="true" className="text-sm leading-none">»</span>
         </button>
       ) : null}

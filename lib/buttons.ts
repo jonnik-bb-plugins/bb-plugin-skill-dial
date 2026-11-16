@@ -365,3 +365,14 @@ export function isSelectionLive(selection: SelectionInput | null, draftText: str
   if (selection === null || normalizeSelectionText(selection.text) === "") return false;
   return selection.kind === "outside" || locateInDraft(draftText, selection.text, selection.before) !== null;
 }
+
+/**
+ * Pressing one of our buttons must not take focus from the composer's editor.
+ * On iOS a tapped button is never focused, so the editor would blur, bb's
+ * phone layout would fold the composer to its one-line form, and the chips
+ * (not rendered there) would vanish before the tap's click acts. Use as
+ * `onMouseDown` on every button we render inside the composer.
+ */
+export function keepComposerFocus(event: { preventDefault(): void }): void {
+  event.preventDefault();
+}

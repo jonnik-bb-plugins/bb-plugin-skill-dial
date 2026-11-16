@@ -12,6 +12,7 @@ import {
   composeDraft,
   composeWithSelection,
   isSelectionLive,
+  keepComposerFocus,
   locateInDraft,
   normalizeSelectionText,
   isCollapsed,
@@ -338,4 +339,21 @@ test("a captured selection is live only while the draft still holds it", () => {
   assert.equal(isSelectionLive({ kind: "outside", text: " " }, "x"), false);
   assert.equal(isSelectionLive({ kind: "composer", text: "login", before: "fix the " }, "fix the login"), true);
   assert.equal(isSelectionLive({ kind: "composer", text: "login", before: "fix the " }, "fix the signup"), false);
+});
+
+test("pressing our buttons keeps focus in the composer (iOS taps would otherwise fold it)", () => {
+  let prevented = 0;
+  keepComposerFocus({ preventDefault: () => (prevented += 1) });
+  assert.equal(prevented, 1);
+});
+
+test("every button the strip renders holds the composer's focus", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
+  const starts = [...source.matchAll(/<button\b/g)].map((match) => match.index ?? 0);
+  assert.equal(starts.length, 5, "show chip, skill chips, both arrows, hide toggle");
+  for (const start of starts) {
+    const opening = source.slice(start, source.indexOf("\n      >", start) > 0 ? Math.min(source.indexOf("\n      >", start), start + 900) : start + 900);
+    assert.match(opening, /onMouseDown=\{keepComposerFocus\}/, opening.slice(0, 80));
+  }
 });
