@@ -10,8 +10,10 @@ composer.
   strip that takes the room between the model controls and mic/send: vertical
   wheel or trackpad scroll over it scrolls sideways, touch swipe works, the
   scrollbar is hidden, clipped edges fade. Focusing a clipped chip with the
-  keyboard scrolls it into view. The composer keeps its height and no built-in
-  control is covered.
+  keyboard scrolls it into view. On narrow composers (under 560 px wide, so on phones) chips show only their
+  emoji, touch-sized; the label and skill move to the tooltip and accessible
+  name, and a chip without an emoji shows its label cut to six characters.
+  The composer keeps its height and no built-in control is covered.
 - Settings (Settings → Plugins → Skill Buttons → **Skill buttons**): per button
   a skill (suggestions from the most recent thread's `/` list, free text also
   accepted), emoji, label, mode and optional args; move up/down and delete.
