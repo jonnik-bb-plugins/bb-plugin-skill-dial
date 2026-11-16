@@ -1,7 +1,6 @@
 // bb-plugin-skill-buttons — frontend. Compact skill chips in the thread
-// composer's action row (with a "⋯" overflow menu) and a settings section
-// where the buttons are configured.
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+// composer's action row (a horizontally scrollable strip) and a settings
+// section where the buttons are configured.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   definePluginApp,
@@ -15,25 +14,27 @@ import type { rpcContract } from "./server.ts";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import {
-  canAddButton,
-  chipLabel,
   assumedSkillCommand,
+  chipLabel,
   composeDraft,
+  fadeMask,
   isCollapsed,
+  isWheelNotch,
   MAX_ARGS,
-  MAX_BUTTONS,
   MAX_EMOJI,
   MAX_LABEL,
   newButtonId,
+  pageScrollTarget,
   resolveCommandTarget,
   roomForChips,
+  scrollEdges,
   showToggle,
+  stripWidth,
   targetKey,
   validateButtons,
-  visibleChipCount,
+  wheelToScroll,
   type ButtonMode,
   type CommandTarget,
   type SkillButton,
@@ -44,7 +45,6 @@ type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 type CommandInfo = SkillCommand & { description: string | null };
 
 const CHIP_GAP = 4;
-const OVERFLOW_WIDTH = 28;
 const TOGGLE_WIDTH = 24;
 
 /** The saved buttons and collapse state, kept current by the server's "buttons-changed" signal. */
@@ -229,11 +229,13 @@ function trimSlotHeight(root: HTMLElement): () => void {
 const chipClass =
   "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
+const arrowClass =
+  "absolute top-1/2 z-10 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground";
+
 function SkillButtonsAction() {
   const composer = useComposer();
   const { rpc, buttons, collapsed: storedCollapsed, setCollapsed } = useButtons();
   const commands = useCommands(rpc, resolveCommandTarget(composer.scope, composer.selection));
-  const portalProps = usePortalScopeProps();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const untrimRef = useRef<(() => void) | null>(null);
   const attach = useCallback((element: HTMLDivElement | null) => {
@@ -242,25 +244,37 @@ function SkillButtonsAction() {
     rootRef.current = element;
     if (element !== null) untrimRef.current = trimSlotHeight(element);
   }, []);
-  const measureRef = useRef<HTMLDivElement>(null);
-  const [shown, setShown] = useState<number | null>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number | null>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
   const busy = composer.isSubmitting;
   const list = buttons ?? [];
   const signature = list.map((button) => `${button.id}:${chipLabel(button)}`).join("|");
   const toggle = showToggle(list.length);
   const collapsed = isCollapsed(list.length, storedCollapsed);
 
-  // Fit as many chips as the row has room for; the rest go to the "⋯" menu.
+  const updateEdges = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const next = scrollEdges(scroller.scrollLeft, scroller.clientWidth, scroller.scrollWidth);
+    setEdges((previous) => (previous.left === next.left && previous.right === next.right ? previous : next));
+  }, []);
+
+  // Size the strip to the room between bb's model controls and the mic/send
+  // buttons (less the toggle), so it never pushes or covers them.
   useLayoutEffect(() => {
     const root = rootRef.current;
-    const measure = measureRef.current;
-    if (root === null || measure === null) return;
+    const content = contentRef.current;
+    const scroller = scrollerRef.current;
+    if (root === null || content === null || scroller === null) return;
     const observed: HTMLElement[] = [];
     const observer = new ResizeObserver(() => update());
     const update = () => {
-      const widths = Array.from(measure.children).map((child) => (child as HTMLElement).getBoundingClientRect().width);
       const room = availableWidth(root);
-      setShown(room === null ? widths.length : visibleChipCount(widths, roomForChips(room.width, toggle, CHIP_GAP, TOGGLE_WIDTH), CHIP_GAP, OVERFLOW_WIDTH));
+      const next = room === null ? null : stripWidth(content.getBoundingClientRect().width, roomForChips(room.width, toggle, CHIP_GAP, TOGGLE_WIDTH));
+      setWidth((previous) => (previous === next ? previous : next));
+      updateEdges();
       if (room !== null) {
         for (const element of room.observe) {
           if (!observed.includes(element)) {
@@ -271,9 +285,33 @@ function SkillButtonsAction() {
       }
     };
     observer.observe(root);
+    observer.observe(content);
+    observer.observe(scroller);
     update();
     return () => observer.disconnect();
-  }, [signature, toggle, collapsed]);
+  }, [signature, toggle, collapsed, updateEdges]);
+
+  // A vertical wheel or trackpad scroll over the strip scrolls it sideways.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const onWheel = (event: WheelEvent) => {
+      const pixels = wheelToScroll(event.deltaX, event.deltaY, event.deltaMode);
+      if (pixels === 0) return;
+      const room = scrollEdges(scroller.scrollLeft, scroller.clientWidth, scroller.scrollWidth);
+      if ((pixels < 0 && !room.left) || (pixels > 0 && !room.right)) return;
+      event.preventDefault();
+      scroller.scrollBy({ left: pixels, behavior: isWheelNotch(pixels) ? "smooth" : "auto" });
+    };
+    scroller.addEventListener("wheel", onWheel, { passive: false });
+    return () => scroller.removeEventListener("wheel", onWheel);
+  }, [collapsed, list.length === 0]);
+
+  const scrollPage = (direction: -1 | 1) => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    scroller.scrollTo({ left: pageScrollTarget(scroller.scrollLeft, scroller.clientWidth, scroller.scrollWidth, direction), behavior: "smooth" });
+  };
 
   const run = useCallback(
     async (button: SkillButton) => {
@@ -307,9 +345,6 @@ function SkillButtonsAction() {
       </div>
     );
   }
-  const count = shown ?? list.length;
-  const visible = list.slice(0, count);
-  const hidden = list.slice(count);
 
   const chip = (button: SkillButton) => {
     const reason = disabledReason(button, commands, busy);
@@ -327,50 +362,37 @@ function SkillButtonsAction() {
       </button>
     );
   };
+  const mask = fadeMask(edges);
 
   return (
-    <div ref={attach} className="relative flex min-w-0 flex-1 items-center justify-end" style={{ gap: CHIP_GAP }}>
-      {visible.map(chip)}
-      {hidden.length === 0 ? null : (
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: OVERFLOW_WIDTH }} aria-label="More skill buttons" title="More skill buttons">
-              ⋯
-            </button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content {...portalProps} side="top" align="end" sideOffset={8} className="z-50 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md">
-              {hidden.map((button) => {
-                const reason = disabledReason(button, commands, busy);
-                return (
-                  <DropdownMenu.Item
-                    key={button.id}
-                    disabled={reason !== null}
-                    title={reason ?? undefined}
-                    onSelect={() => void run(button)}
-                    className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
-                  >
-                    {chipLabel(button)}
-                  </DropdownMenu.Item>
-                );
-              })}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-      )}
+    <div ref={attach} className="flex min-w-0 items-center justify-end" style={{ gap: CHIP_GAP }}>
+      <div className="relative min-w-0" style={{ width: width ?? undefined, maxWidth: "100%" }}>
+        <div
+          ref={scrollerRef}
+          onScroll={updateEdges}
+          className="flex overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden"
+          style={{ scrollbarWidth: "none", scrollPaddingInline: 26, overscrollBehaviorX: "contain", WebkitMaskImage: mask, maskImage: mask }}
+        >
+          <div ref={contentRef} className="flex w-max items-center" style={{ gap: CHIP_GAP }}>
+            {list.map(chip)}
+          </div>
+        </div>
+        {edges.left ? (
+          <button type="button" tabIndex={-1} className={cn(arrowClass, "left-0")} aria-label="Scroll skill buttons left" onClick={() => scrollPage(-1)}>
+            <Icon name="ChevronLeft" className="size-3" />
+          </button>
+        ) : null}
+        {edges.right ? (
+          <button type="button" tabIndex={-1} className={cn(arrowClass, "right-0")} aria-label="Scroll skill buttons right" onClick={() => scrollPage(1)}>
+            <Icon name="ChevronRight" className="size-3" />
+          </button>
+        ) : null}
+      </div>
       {toggle ? (
         <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: TOGGLE_WIDTH }} aria-label="Hide skill buttons" title="Hide skill buttons" onClick={() => setCollapsed(true)}>
-          <Icon name="ChevronRight" className="size-3.5" />
+          <Icon name="ChevronsRight" className="size-3.5" />
         </button>
       ) : null}
-      {/* Off-screen copy at natural width, so the row can be measured without flicker. */}
-      <div ref={measureRef} aria-hidden="true" className="pointer-events-none invisible absolute left-0 top-0 flex h-0 w-max overflow-hidden" style={{ gap: CHIP_GAP }}>
-        {list.map((button) => (
-          <span key={button.id} className={chipClass}>
-            {chipLabel(button)}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -385,6 +407,16 @@ function SettingsSection() {
   const [saved, setSaved] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+
+  // A new row is brought into view and its skill field focused, however long the list is.
+  useEffect(() => {
+    if (justAdded === null) return;
+    const row = document.querySelector<HTMLElement>(`[data-skill-button-row="${justAdded}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+    row?.querySelector<HTMLInputElement>("input[list]")?.focus();
+    setJustAdded(null);
+  }, [justAdded]);
 
   useEffect(() => {
     if (buttons !== null && rows === null) {
@@ -410,9 +442,9 @@ function SettingsSection() {
     setRows(next);
   };
   const add = () => {
-    if (!canAddButton(rows.length)) return;
     const id = newButtonId(rows.map((row) => row.id), () => crypto.randomUUID().slice(0, 8));
     setRows([...rows, { id, skill: "", emoji: "", label: "", mode: "insert", args: "" }]);
+    setJustAdded(id);
   };
   const save = async () => {
     const checked = validateButtons(rows);
@@ -442,7 +474,7 @@ function SettingsSection() {
         ))}
       </datalist>
       <p className="text-xs text-muted-foreground">
-        Up to {MAX_BUTTONS} chips next to the composer's send button. <b>Insert</b> puts the skill and args at the start of the
+        Chips in a scrollable strip next to the composer's send button, in this order. <b>Insert</b> puts the skill and args at the start of the
         draft; <b>Send</b> submits them with the draft as one message. Skills come from{" "}
         {commands.status === "ready" ? "the most recent thread's provider" : "…"}; you can also type a name.
         {commands.status === "error" ? ` (Skill list unavailable: ${commands.message})` : ""}
@@ -454,15 +486,18 @@ function SettingsSection() {
       ) : (
         <ul className="flex flex-col gap-2">
           {rows.map((row, index) => (
-            <li key={row.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-2">
+            <li key={row.id} data-skill-button-row={row.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-2">
+              <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground" aria-hidden="true">
+                {index + 1}
+              </span>
               <Input className="w-14 text-center" value={row.emoji} maxLength={MAX_EMOJI} placeholder="🔍" aria-label={`Button ${index + 1} emoji`} onChange={(event) => update(index, { emoji: event.target.value })} />
               <Input className="w-24" value={row.label} maxLength={MAX_LABEL} placeholder="Label" aria-label={`Button ${index + 1} label`} onChange={(event) => update(index, { label: event.target.value })} />
-              <Input className="w-56" list="skill-buttons-skills" value={row.skill} placeholder="skill name" aria-label={`Button ${index + 1} skill`} onChange={(event) => update(index, { skill: event.target.value })} />
+              <Input className="min-w-40 flex-[2]" list="skill-buttons-skills" value={row.skill} placeholder="skill name" aria-label={`Button ${index + 1} skill`} onChange={(event) => update(index, { skill: event.target.value })} />
               <select className={selectClass} value={row.mode} aria-label={`Button ${index + 1} mode`} onChange={(event) => update(index, { mode: event.target.value as ButtonMode })}>
                 <option value="insert">Insert</option>
                 <option value="send">Send</option>
               </select>
-              <Input className="min-w-32 flex-1" value={row.args} maxLength={MAX_ARGS} placeholder="Args (optional)" aria-label={`Button ${index + 1} args`} onChange={(event) => update(index, { args: event.target.value })} />
+              <Input className="min-w-28 flex-1" value={row.args} maxLength={MAX_ARGS} placeholder="Args (optional)" aria-label={`Button ${index + 1} args`} onChange={(event) => update(index, { args: event.target.value })} />
               <Button variant="ghost" size="icon" className="size-7" aria-label={`Move button ${index + 1} up`} disabled={index === 0} onClick={() => move(index, -1)}>
                 <Icon name="ArrowUp" className="size-4" />
               </Button>
@@ -481,13 +516,11 @@ function SettingsSection() {
           {error}
         </p>
       )}
-      <div className="flex items-center gap-2">
-        <span title={canAddButton(rows.length) ? undefined : `At most ${MAX_BUTTONS} buttons`}>
-          <Button variant="outline" size="sm" onClick={add} disabled={!canAddButton(rows.length)}>
-            <Icon name="Plus" className="size-4" />
-            Add button ({rows.length}/{MAX_BUTTONS})
-          </Button>
-        </span>
+      <div className="sticky bottom-0 z-10 -mx-1 flex items-center gap-2 border-t border-border bg-background px-1 py-2">
+        <Button variant="outline" size="sm" onClick={add}>
+          <Icon name="Plus" className="size-4" />
+          Add button ({rows.length})
+        </Button>
         <Button size="sm" onClick={() => void save()} disabled={!dirty || pending}>
           Save
         </Button>
