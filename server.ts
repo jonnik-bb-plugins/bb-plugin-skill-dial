@@ -6,7 +6,6 @@ import {
   buttonSchema,
   buttonsSchema,
   collapsedSchema,
-  MAX_BUTTONS,
   readStoredButtons,
   readStoredCollapsed,
   type SkillButton,
@@ -45,7 +44,6 @@ export const rpcContract = defineRpcContract({
     output: z.object({ collapsed: collapsedSchema }),
   },
   saveButtons: {
-    // `buttonsSchema` enforces the 6-button cap on the server as well.
     input: z.object({ buttons: buttonsSchema }),
     output: z.object({ buttons: z.array(buttonSchema) }),
   },
@@ -129,10 +127,9 @@ export default async function plugin(bb: BbPluginApi) {
       return { collapsed };
     },
     saveButtons: async ({ buttons }) => {
-      const stored = buttons.slice(0, MAX_BUTTONS);
-      await bb.storage.kv.set(BUTTONS_KEY, stored);
-      bb.realtime.publish(BUTTONS_CHANGED, { count: stored.length });
-      return { buttons: stored };
+      await bb.storage.kv.set(BUTTONS_KEY, buttons);
+      bb.realtime.publish(BUTTONS_CHANGED, { count: buttons.length });
+      return { buttons };
     },
     listCommands: async ({ target }) => {
       try {

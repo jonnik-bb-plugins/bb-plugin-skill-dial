@@ -3,7 +3,6 @@
 // `insert` and `send` modes, and the chip/overflow split.
 import { z } from "zod";
 
-export const MAX_BUTTONS = 6;
 export const MAX_LABEL = 20;
 export const MAX_EMOJI = 8;
 export const MAX_ARGS = 500;
@@ -45,7 +44,6 @@ export type SkillButton = z.infer<typeof buttonSchema>;
 
 export const buttonsSchema = z
   .array(buttonSchema)
-  .max(MAX_BUTTONS, `At most ${MAX_BUTTONS} buttons`)
   .refine((buttons) => new Set(buttons.map((button) => button.id)).size === buttons.length, "Duplicate button id");
 
 export type ValidationResult = { ok: true; buttons: SkillButton[] } | { ok: false; error: string };
@@ -61,11 +59,7 @@ export function validateButtons(input: unknown): ValidationResult {
   return { ok: true, buttons: parsed.data };
 }
 
-export function canAddButton(count: number): boolean {
-  return count < MAX_BUTTONS;
-}
-
-/** A tolerant read of persisted data: invalid entries are dropped, the cap is kept. */
+/** A tolerant read of persisted data: invalid and duplicate entries are dropped; any number of buttons loads. */
 export function readStoredButtons(value: unknown): SkillButton[] {
   if (!Array.isArray(value)) return [];
   const buttons: SkillButton[] = [];
@@ -75,7 +69,6 @@ export function readStoredButtons(value: unknown): SkillButton[] {
     if (!parsed.success || seen.has(parsed.data.id)) continue;
     seen.add(parsed.data.id);
     buttons.push(parsed.data);
-    if (buttons.length === MAX_BUTTONS) break;
   }
   return buttons;
 }
@@ -141,25 +134,6 @@ export function composeDraft<M extends DraftMention>(
   return { text, mentions: [pill, ...others] };
 }
 
-/**
- * How many chips show before the overflow menu. `widths` are the chips'
- * natural widths; the overflow trigger takes `overflowWidth` plus a gap when
- * some chips are hidden. Never hides a chip that would have fit with nothing hidden.
- */
-export function visibleChipCount(widths: readonly number[], available: number, gap: number, overflowWidth: number): number {
-  const total = widths.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, widths.length - 1);
-  if (total <= available) return widths.length;
-  let used = overflowWidth;
-  let count = 0;
-  for (const width of widths) {
-    const next = used + gap + width;
-    if (next > available) break;
-    used = next;
-    count += 1;
-  }
-  return count;
-}
-
 export function newButtonId(existing: readonly string[], random: () => string): string {
   for (;;) {
     const id = random();
@@ -185,7 +159,7 @@ export function isCollapsed(buttonCount: number, stored: boolean): boolean {
   return showToggle(buttonCount) && stored;
 }
 
-/** Width left for chips (and the "⋯" trigger) once the chevron toggle takes its share. */
+/** Width left for the chip strip once the collapse toggle takes its share. */
 export function roomForChips(available: number, hasToggle: boolean, gap: number, toggleWidth: number): number {
   return hasToggle ? Math.max(0, available - toggleWidth - gap) : available;
 }
@@ -236,4 +210,50 @@ export function targetKey(target: CommandTarget | null): string {
  */
 export function assumedSkillCommand(name: string): SkillCommand {
   return { name, source: "skill", origin: "user", argumentHint: null };
+}
+
+/**
+ * The strip's width: as wide as its chips when they fit, else the room there is.
+ * Null when the room is unknown (the strip then takes its natural width).
+ */
+export function stripWidth(natural: number, room: number | null): number | null {
+  return room === null ? null : Math.max(0, Math.min(natural, Math.floor(room)));
+}
+
+/** Which edges of the strip have clipped content to scroll to. */
+export function scrollEdges(scrollLeft: number, clientWidth: number, scrollWidth: number): { left: boolean; right: boolean } {
+  const slack = 1.5;
+  return {
+    left: scrollLeft > slack,
+    right: scrollLeft + clientWidth < scrollWidth - slack,
+  };
+}
+
+/** Where an arrow click scrolls to: roughly one strip width, clamped to the content. */
+export function pageScrollTarget(scrollLeft: number, clientWidth: number, scrollWidth: number, direction: -1 | 1): number {
+  const step = Math.max(1, Math.round(clientWidth * 0.8));
+  return Math.min(Math.max(0, scrollWidth - clientWidth), Math.max(0, scrollLeft + direction * step));
+}
+
+/**
+ * Horizontal pixels a wheel event should scroll the strip by: a vertical wheel
+ * or trackpad scroll maps to horizontal; an event that is already mostly
+ * horizontal is left to the browser (0).
+ */
+export function wheelToScroll(deltaX: number, deltaY: number, deltaMode: number): number {
+  if (Math.abs(deltaX) >= Math.abs(deltaY)) return 0;
+  return deltaMode === 1 ? deltaY * 16 : deltaY;
+}
+
+/** A mouse-wheel notch (big, discrete step) scrolls smoothly; trackpad deltas are applied as they come. */
+export function isWheelNotch(pixels: number): boolean {
+  return Math.abs(pixels) >= 50;
+}
+
+/** A soft fade on the clipped edges, as a CSS mask so it needs no background color. */
+export function fadeMask(edges: { left: boolean; right: boolean }, size = 24): string | undefined {
+  if (!edges.left && !edges.right) return undefined;
+  const start = edges.left ? `transparent 0, #000 ${size}px` : "#000 0, #000 0";
+  const end = edges.right ? `#000 calc(100% - ${size}px), transparent 100%` : "#000 100%, #000 100%";
+  return `linear-gradient(to right, ${start}, ${end})`;
 }

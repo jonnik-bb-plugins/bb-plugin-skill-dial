@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  canAddButton,
   chipLabel,
   assumedSkillCommand,
+  fadeMask,
+  isWheelNotch,
+  pageScrollTarget,
+  scrollEdges,
+  stripWidth,
+  wheelToScroll,
   composeDraft,
   isCollapsed,
   readStoredCollapsed,
@@ -11,10 +16,8 @@ import {
   roomForChips,
   showToggle,
   targetKey,
-  MAX_BUTTONS,
   readStoredButtons,
   validateButtons,
-  visibleChipCount,
   type SkillCommand,
 } from "../lib/buttons.ts";
 
@@ -29,15 +32,13 @@ const button = (n: number, patch: Record<string, unknown> = {}) => ({
   ...patch,
 });
 
-test("validation accepts up to six buttons and rejects a seventh", () => {
-  const six = Array.from({ length: MAX_BUTTONS }, (_, i) => button(i));
-  assert.equal(validateButtons(six).ok, true);
-  const seven = [...six, button(6)];
-  const result = validateButtons(seven);
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.match(result.error, /At most 6 buttons/);
-  assert.equal(canAddButton(5), true);
-  assert.equal(canAddButton(6), false);
+test("validation accepts any number of buttons", () => {
+  assert.equal(validateButtons([]).ok, true);
+  for (const count of [1, 6, 7, 25, 100]) {
+    const result = validateButtons(Array.from({ length: count }, (_, i) => button(i)));
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.buttons.length, count);
+  }
 });
 
 test("validation normalizes the skill name and args", () => {
@@ -66,11 +67,12 @@ test("validation rejects bad input with a button number", () => {
   assert.equal(validateButtons("nope").ok, false);
 });
 
-test("stored data is read tolerantly and capped", () => {
+test("stored data is read tolerantly, without a cap", () => {
   const stored = [button(1), { nonsense: true }, button(1), ...Array.from({ length: 9 }, (_, i) => button(i + 10))];
   const buttons = readStoredButtons(stored);
-  assert.equal(buttons.length, MAX_BUTTONS);
-  assert.equal(new Set(buttons.map((b) => b.id)).size, MAX_BUTTONS);
+  assert.equal(buttons.length, 10);
+  assert.equal(new Set(buttons.map((b) => b.id)).size, 10);
+  assert.equal(readStoredButtons(Array.from({ length: 30 }, (_, i) => button(i))).length, 30);
   assert.deepEqual(readStoredButtons(undefined), []);
 });
 
@@ -120,20 +122,11 @@ test("send with draft text prepends the pill and args as one message", () => {
   assert.equal(draft.text, "/review --x fix the bug");
 });
 
-test("visibleChipCount shows all chips that fit and collapses the rest", () => {
-  assert.equal(visibleChipCount([50, 50, 50], 200, 4, 28), 3);
-  assert.equal(visibleChipCount([50, 50, 50], 120, 4, 28), 1);
-  assert.equal(visibleChipCount([50, 50, 50], 20, 4, 28), 0);
-  assert.equal(visibleChipCount([], 0, 4, 28), 0);
-  // all fit exactly: no overflow trigger needed
-  assert.equal(visibleChipCount([50, 50], 104, 4, 28), 2);
-});
-
 test("toggle is shown only with more than one button", () => {
   assert.equal(showToggle(0), false);
   assert.equal(showToggle(1), false);
   assert.equal(showToggle(2), true);
-  assert.equal(showToggle(MAX_BUTTONS), true);
+  assert.equal(showToggle(30), true);
 });
 
 test("collapse state defaults to expanded when nothing usable is stored", () => {
@@ -153,13 +146,54 @@ test("stored collapse only applies while the toggle exists", () => {
   assert.equal(isCollapsed(0, true), false);
 });
 
-test("the toggle's width is reserved before chips are fitted", () => {
+test("the toggle's width is reserved before the strip is sized", () => {
   assert.equal(roomForChips(200, false, 4, 24), 200);
   assert.equal(roomForChips(200, true, 4, 24), 172);
   assert.equal(roomForChips(10, true, 4, 24), 0);
-  // 3 chips of 50 + 2 gaps = 158 fit in 200 alone, but not beside the toggle in 150
-  assert.equal(visibleChipCount([50, 50, 50], roomForChips(200, false, 4, 24), 4, 28), 3);
-  assert.equal(visibleChipCount([50, 50, 50], roomForChips(170, true, 4, 24), 4, 28), 2);
+});
+
+test("the strip is as wide as its chips when they fit, else the room", () => {
+  assert.equal(stripWidth(150, 400), 150);
+  assert.equal(stripWidth(500, 172), 172);
+  assert.equal(stripWidth(500, 172.9), 172);
+  assert.equal(stripWidth(500, 0), 0);
+  assert.equal(stripWidth(500, -5), 0);
+  assert.equal(stripWidth(500, null), null);
+});
+
+test("scroll edges show only where content is clipped", () => {
+  assert.deepEqual(scrollEdges(0, 200, 200), { left: false, right: false });
+  assert.deepEqual(scrollEdges(0, 200, 500), { left: false, right: true });
+  assert.deepEqual(scrollEdges(150, 200, 500), { left: true, right: true });
+  assert.deepEqual(scrollEdges(300, 200, 500), { left: true, right: false });
+  // sub-pixel rounding does not invent an edge
+  assert.deepEqual(scrollEdges(0.4, 200, 200.8), { left: false, right: false });
+});
+
+test("an arrow click scrolls about one strip width and stays in range", () => {
+  assert.equal(pageScrollTarget(0, 200, 1000, 1), 160);
+  assert.equal(pageScrollTarget(160, 200, 1000, 1), 320);
+  assert.equal(pageScrollTarget(700, 200, 1000, 1), 800);
+  assert.equal(pageScrollTarget(100, 200, 1000, -1), 0);
+  assert.equal(pageScrollTarget(500, 200, 1000, -1), 340);
+  assert.equal(pageScrollTarget(0, 200, 100, 1), 0);
+});
+
+test("a vertical wheel maps to horizontal scroll; a horizontal one is left alone", () => {
+  assert.equal(wheelToScroll(0, 100, 0), 100);
+  assert.equal(wheelToScroll(0, -3, 1), -48);
+  assert.equal(wheelToScroll(40, 10, 0), 0);
+  assert.equal(wheelToScroll(10, 10, 0), 0);
+  assert.equal(isWheelNotch(100), true);
+  assert.equal(isWheelNotch(-120), true);
+  assert.equal(isWheelNotch(4), false);
+});
+
+test("the fade covers only the clipped edges", () => {
+  assert.equal(fadeMask({ left: false, right: false }), undefined);
+  assert.match(fadeMask({ left: true, right: false }) ?? "", /transparent 0, #000 24px, #000 100%/);
+  assert.match(fadeMask({ left: false, right: true }) ?? "", /#000 0, #000 0, #000 calc\(100% - 24px\), transparent 100%/);
+  assert.match(fadeMask({ left: true, right: true }, 10) ?? "", /transparent 0, #000 10px, #000 calc\(100% - 10px\), transparent 100%/);
 });
 
 test("a thread composer targets its thread", () => {
