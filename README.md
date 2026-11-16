@@ -1,7 +1,7 @@
-# Skill Buttons
+# Skill Dial
 
-A BB plugin that adds quick-launch buttons for skills next to the thread
-composer.
+A BB plugin: a speed dial for skills. Quick-launch chips sit next to the thread
+composer's send button.
 
 ## What you get
 
@@ -14,7 +14,7 @@ composer.
   emoji, touch-sized; the label and skill move to the tooltip and accessible
   name, and a chip without an emoji shows its label cut to six characters.
   The composer keeps its height and no built-in control is covered.
-- Settings (Settings → Plugins → Skill Buttons → **Skill buttons**): per button
+- Settings (Settings → Plugins → Skill Dial → **Skill Dial**): per button
   a skill (suggestions from the most recent thread's `/` list, free text also
   accepted), emoji, label, mode and optional args; move up/down and delete.
   There is no limit on the number of buttons; the action bar with **Add button**
@@ -33,7 +33,7 @@ composer.
   whitespace) selected, a chip works as before. Keyboard activation uses the selection
   made just before focus moved onto the chip, if it still stands.
 - A small chevron after the strip (outside the scroll area, always visible) collapses everything into one
-  compact chip (bolt + button count, tooltip "Show skill buttons"); clicking it
+  compact chip (bolt + button count, tooltip "Show Skill Dial"); clicking it
   expands again. It shows only with 2 or more buttons, and its state is global and stored on the server, so it follows you across
   reloads, browsers and devices.
 - A chip is disabled, with a tooltip, while the skill list loads or fails, or

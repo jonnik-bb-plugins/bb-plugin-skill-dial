@@ -5,7 +5,7 @@ Launch a skill with one click from the thread composer.
 - Any number of compact chips (emoji and short label) in the thread and
   new-thread composers' action row, left of the send button, in a horizontally
   scrollable strip with edge fades; on narrow screens chips shrink to their emoji; the composer never grows taller.
-- A **Skill buttons** section in the plugin's settings: pick a skill, a label
+- A **Skill Dial** section in the plugin's settings: pick a skill, a label
   and emoji, a mode and optional args; reorder and delete buttons.
 - Select text in the chat and press a chip: the selection becomes the skill's
   argument. Select text in your draft and the skill goes right before it.

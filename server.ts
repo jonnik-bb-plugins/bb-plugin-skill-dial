@@ -1,4 +1,4 @@
-// bb-plugin-skill-buttons — backend. Stores the (global) button list and
+// bb-plugin-skill-dial — backend. Stores the (global) button list and
 // resolves which skills the thread's provider offers, as bb's own `/` menu does.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";

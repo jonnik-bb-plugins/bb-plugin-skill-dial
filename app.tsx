@@ -1,4 +1,4 @@
-// bb-plugin-skill-buttons — frontend. Compact skill chips in the thread
+// bb-plugin-skill-dial — frontend. Compact skill chips in the thread
 // composer's action row (a horizontally scrollable strip) and a settings
 // section where the buttons are configured.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -78,7 +78,7 @@ function useButtons() {
         () => undefined,
         (cause) => {
           setCollapsed(!next);
-          toast.error(cause instanceof Error ? cause.message : "Could not save the skill buttons state");
+          toast.error(cause instanceof Error ? cause.message : "Could not save the Skill Dial state");
         },
       );
     },
@@ -270,7 +270,7 @@ const COMPACT_FADE = 12;
 const chipClass =
   "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
-function SkillButtonsAction() {
+function SkillDialAction() {
   const composer = useComposer();
   const { rpc, buttons, collapsed: storedCollapsed, setCollapsed } = useButtons();
   const commands = useCommands(rpc, resolveCommandTarget(composer.scope, composer.selection));
@@ -393,7 +393,7 @@ function SkillButtonsAction() {
         }
         await composer.submit();
       } catch (cause) {
-        toast.error(cause instanceof Error ? cause.message : "Could not run the skill button");
+        toast.error(cause instanceof Error ? cause.message : "Could not run that Skill Dial chip");
       }
     },
     [commands, composer],
@@ -403,7 +403,7 @@ function SkillButtonsAction() {
   if (collapsed) {
     return (
       <div ref={attach} className="flex min-w-0 flex-1 items-center justify-end">
-        <button type="button" className={cn(chipClass, "px-2")} aria-label="Show skill buttons" title="Show skill buttons" onMouseDown={keepComposerFocus} onClick={() => setCollapsed(false)}>
+        <button type="button" className={cn(chipClass, "px-2")} aria-label="Show Skill Dial" title="Show Skill Dial" onMouseDown={keepComposerFocus} onClick={() => setCollapsed(false)}>
           <Icon name="Zap" className="size-3.5" />
           <span>{list.length}</span>
         </button>
@@ -454,7 +454,7 @@ function SkillButtonsAction() {
         </div>
       </div>
       {toggle ? (
-        <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: TOGGLE_WIDTH }} aria-label="Hide skill buttons" title="Hide skill buttons" onMouseDown={keepComposerFocus} onClick={() => setCollapsed(true)}>
+        <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: TOGGLE_WIDTH }} aria-label="Hide Skill Dial" title="Hide Skill Dial" onMouseDown={keepComposerFocus} onClick={() => setCollapsed(true)}>
           <span aria-hidden="true" className="text-sm leading-none">»</span>
         </button>
       ) : null}
@@ -523,7 +523,7 @@ function SettingsSection() {
       setRows(result.buttons);
       setSaved(JSON.stringify(result.buttons));
       setError(null);
-      toast.success("Skill buttons saved");
+      toast.success("Skill Dial saved");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -533,7 +533,7 @@ function SettingsSection() {
 
   return (
     <div className="flex flex-col gap-3">
-      <datalist id="skill-buttons-skills">
+      <datalist id="skill-dial-skills">
         {suggestions.map((command) => (
           <option key={command.name} value={command.name} label={command.source === "skill" ? "skill" : "command"} />
         ))}
@@ -557,7 +557,7 @@ function SettingsSection() {
               </span>
               <Input className="w-14 text-center" value={row.emoji} maxLength={MAX_EMOJI} placeholder="🔍" aria-label={`Button ${index + 1} emoji`} onChange={(event) => update(index, { emoji: event.target.value })} />
               <Input className="w-24" value={row.label} maxLength={MAX_LABEL} placeholder="Label" aria-label={`Button ${index + 1} label`} onChange={(event) => update(index, { label: event.target.value })} />
-              <Input className="min-w-40 flex-[2]" list="skill-buttons-skills" value={row.skill} placeholder="skill name" aria-label={`Button ${index + 1} skill`} onChange={(event) => update(index, { skill: event.target.value })} />
+              <Input className="min-w-40 flex-[2]" list="skill-dial-skills" value={row.skill} placeholder="skill name" aria-label={`Button ${index + 1} skill`} onChange={(event) => update(index, { skill: event.target.value })} />
               <select className={selectClass} value={row.mode} aria-label={`Button ${index + 1} mode`} onChange={(event) => update(index, { mode: event.target.value as ButtonMode })}>
                 <option value="insert">Insert</option>
                 <option value="send">Send</option>
@@ -602,13 +602,13 @@ function SettingsSection() {
 export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "buttons",
-    title: "Skill buttons",
+    title: "Skill Dial",
     description: "Quick-launch chips for skills next to the thread composer.",
     component: SettingsSection,
   });
   app.composer.customize({
-    id: "skill-buttons",
+    id: "skill-dial",
     scopes: ["thread", "new-thread"],
-    actions: [{ id: "chips", component: SkillButtonsAction }],
+    actions: [{ id: "chips", component: SkillDialAction }],
   });
 });

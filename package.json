@@ -1,5 +1,5 @@
 {
-  "name": "bb-plugin-skill-buttons",
+  "name": "bb-plugin-skill-dial",
   "version": "0.1.0",
   "type": "module",
   "engines": {
@@ -7,8 +7,8 @@
     "bbPluginSdk": ">=0.6.132"
   },
   "bb": {
-    "name": "Skill Buttons",
-    "description": "Quick-launch buttons for skills next to the thread composer, configured in plugin settings.",
+    "name": "Skill Dial",
+    "description": "Speed dial for skills: quick-launch chips next to the thread composer, configured in plugin settings.",
     "branding": {
       "icon": "Zap"
     },

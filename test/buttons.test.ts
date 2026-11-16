@@ -356,7 +356,7 @@ test("every button the strip renders holds the composer's focus", async () => {
 test("the strip has no scroll arrow buttons", async () => {
   const { readFileSync } = await import("node:fs");
   const source = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /Scroll skill buttons/);
+  assert.doesNotMatch(source, /Scroll skill/);
 });
 
 test("the composer's own width decides compact mode", () => {
