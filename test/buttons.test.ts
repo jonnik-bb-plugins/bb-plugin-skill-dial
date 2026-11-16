@@ -10,6 +10,10 @@ import {
   stripWidth,
   wheelToScroll,
   composeDraft,
+  composeWithSelection,
+  isSelectionLive,
+  locateInDraft,
+  normalizeSelectionText,
   isCollapsed,
   readStoredCollapsed,
   resolveCommandTarget,
@@ -238,4 +242,100 @@ test("the target key changes with provider, project or environment, and only the
 
 test("an assumed command is a user skill with no argument hint", () => {
   assert.deepEqual(assumedSkillCommand("review"), { name: "review", source: "skill", origin: "user", argumentHint: null });
+});
+
+const rangeOf = (draft: { text: string; mentions: Array<{ from: number; to: number }> }, index: number) =>
+  draft.text.slice(draft.mentions[index]?.from, draft.mentions[index]?.to);
+
+test("selection text keeps line breaks and drops edge whitespace", () => {
+  assert.equal(normalizeSelectionText("  a\r\nb \n"), "a\nb");
+  assert.equal(normalizeSelectionText(" \n\t "), "");
+});
+
+test("outside selection into an empty draft: pill, args, selected text", () => {
+  const draft = composeWithSelection({ text: "", mentions: [] }, { args: "" }, command, { kind: "outside", text: " some passage \n" });
+  assert.equal(draft.text, "/review some passage");
+  assert.deepEqual(draft.mentions.map((m) => [m.kind, m.from, m.to]), [["command", 0, 7]]);
+  const withArgs = composeWithSelection({ text: "", mentions: [] }, { args: "--deep" }, command, { kind: "outside", text: "x" });
+  assert.equal(withArgs.text, "/review --deep x");
+});
+
+test("outside selection keeps line breaks and is followed by the existing draft", () => {
+  const draft = composeWithSelection({ text: "why?", mentions: [] }, { args: "" }, command, { kind: "outside", text: "line one\nline two" });
+  assert.equal(draft.text, "/review line one\nline two\nwhy?");
+  const single = composeWithSelection({ text: "why?", mentions: [] }, { args: "" }, command, { kind: "outside", text: "one line" });
+  assert.equal(single.text, "/review one line why?");
+});
+
+test("outside selection moves the draft's own pills and replaces a leading command pill", () => {
+  const mention = { from: 4, to: 9, label: "a.ts", kind: "path" };
+  const draft = composeWithSelection({ text: "see @a.ts", mentions: [mention] }, { args: "" }, command, { kind: "outside", text: "quote" });
+  assert.equal(draft.text, "/review quote see @a.ts");
+  assert.equal(draft.text.slice(draft.mentions[1]?.from, draft.mentions[1]?.to), "@a.ts");
+  const leading = { from: 0, to: 5, label: "plan", kind: "command" };
+  const replaced = composeWithSelection({ text: "/plan go", mentions: [leading] }, { args: "" }, command, { kind: "outside", text: "q" });
+  assert.equal(replaced.text, "/review q go");
+  assert.equal(replaced.mentions.length, 1);
+});
+
+test("whitespace-only or missing selection behaves as before", () => {
+  const base = composeDraft({ text: "hi", mentions: [] }, { args: "a" }, command);
+  assert.deepEqual(composeWithSelection({ text: "hi", mentions: [] }, { args: "a" }, command, null), base);
+  assert.deepEqual(composeWithSelection({ text: "hi", mentions: [] }, { args: "a" }, command, { kind: "outside", text: " \n " }), base);
+  assert.deepEqual(composeWithSelection({ text: "hi", mentions: [] }, { args: "a" }, command, { kind: "composer", text: "  ", before: "" }), base);
+});
+
+test("composer selection: the pill goes right before the selected range", () => {
+  const text = "fix the login page now";
+  const start = composeWithSelection({ text, mentions: [] }, { args: "" }, command, { kind: "composer", text: "fix the", before: "" });
+  assert.equal(start.text, "/review fix the login page now");
+  const middle = composeWithSelection({ text, mentions: [] }, { args: "" }, command, { kind: "composer", text: "login page", before: "fix the " });
+  assert.equal(middle.text, "fix the /review login page now");
+  assert.equal(rangeOf(middle, 0), "/review");
+  const end = composeWithSelection({ text, mentions: [] }, { args: "--x" }, command, { kind: "composer", text: "now", before: "fix the login page " });
+  assert.equal(end.text, "fix the login page /review --x now");
+});
+
+test("composer selection keeps other pills attached to their text", () => {
+  const text = "see @a.ts and @b.ts today";
+  const a = { from: 4, to: 9, label: "a.ts", kind: "path" };
+  const b = { from: 14, to: 19, label: "b.ts", kind: "path" };
+  const draft = composeWithSelection({ text, mentions: [a, b] }, { args: "" }, command, { kind: "composer", text: "and", before: "see @a.ts " });
+  assert.equal(draft.text, "see @a.ts /review and @b.ts today");
+  assert.deepEqual(draft.mentions.map((m) => draft.text.slice(m.from, m.to)), ["@a.ts", "/review", "@b.ts"]);
+});
+
+test("a selection starting inside a pill puts the new pill before that pill", () => {
+  const text = "see @a.ts now";
+  const a = { from: 4, to: 9, label: "a.ts", kind: "path" };
+  const draft = composeWithSelection({ text, mentions: [a] }, { args: "" }, command, { kind: "composer", text: "a.ts now", before: "see @" });
+  assert.equal(draft.text, "see /review @a.ts now");
+  assert.deepEqual(draft.mentions.map((m) => draft.text.slice(m.from, m.to)), ["/review", "@a.ts"]);
+});
+
+test("repeated text is told apart by what precedes the selection", () => {
+  const text = "go go go";
+  assert.deepEqual(locateInDraft(text, "go", ""), { from: 0, to: 2 });
+  assert.deepEqual(locateInDraft(text, "go", "go "), { from: 3, to: 5 });
+  assert.deepEqual(locateInDraft(text, "go", "go go "), { from: 6, to: 8 });
+  assert.equal(locateInDraft(text, "stop", ""), null);
+  assert.equal(locateInDraft(text, "  ", ""), null);
+  // paragraph separators may differ between the editor and the draft
+  assert.deepEqual(locateInDraft("a\nb", "a\n\nb", ""), { from: 0, to: 3 });
+});
+
+test("a composer selection that cannot be found falls back to the plain behavior", () => {
+  const base = composeDraft({ text: "hello", mentions: [] }, { args: "" }, command);
+  assert.deepEqual(
+    composeWithSelection({ text: "hello", mentions: [] }, { args: "" }, command, { kind: "composer", text: "gone", before: "" }),
+    base,
+  );
+});
+
+test("a captured selection is live only while the draft still holds it", () => {
+  assert.equal(isSelectionLive(null, "x"), false);
+  assert.equal(isSelectionLive({ kind: "outside", text: "x" }, ""), true);
+  assert.equal(isSelectionLive({ kind: "outside", text: " " }, "x"), false);
+  assert.equal(isSelectionLive({ kind: "composer", text: "login", before: "fix the " }, "fix the login"), true);
+  assert.equal(isSelectionLive({ kind: "composer", text: "login", before: "fix the " }, "fix the signup"), false);
 });

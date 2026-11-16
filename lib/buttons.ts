@@ -257,3 +257,111 @@ export function fadeMask(edges: { left: boolean; right: boolean }, size = 24): s
   const end = edges.right ? `#000 calc(100% - ${size}px), transparent 100%` : "#000 100%, #000 100%";
   return `linear-gradient(to right, ${start}, ${end})`;
 }
+
+/**
+ * What the user had selected when a chip was used. `outside` is text selected
+ * anywhere but the composer (the chat transcript, say). `composer` is a range
+ * inside the composer's own editor: `text` is what is selected and `before` the
+ * editor's plain text up to the selection's start (used to tell repeated
+ * occurrences of `text` apart).
+ */
+export type SelectionInput = { kind: "outside"; text: string } | { kind: "composer"; text: string; before: string };
+
+/** Selected text with line breaks kept as `\n` and the ends trimmed; "" when there is nothing to use. */
+export function normalizeSelectionText(raw: string): string {
+  return raw.replace(/\r\n?/g, "\n").trim();
+}
+
+function selectionPattern(selected: string): RegExp {
+  const parts = selected.split(/\n+/).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(parts.join("\\n+"), "g");
+}
+
+function occurrences(haystack: string, selected: string): Array<{ index: number; length: number }> {
+  const pattern = selectionPattern(selected);
+  const found: Array<{ index: number; length: number }> = [];
+  for (let match = pattern.exec(haystack); match !== null; match = pattern.exec(haystack)) {
+    found.push({ index: match.index, length: match[0].length });
+    pattern.lastIndex = match.index + 1;
+  }
+  return found;
+}
+
+/**
+ * Where the selection sits in the draft text. The editor and the draft agree on
+ * the text but not on pill labels or paragraph separators, so the selection is
+ * found by its text: the k-th occurrence in the draft, k being how many
+ * occurrences precede the selection in `before`. Null when it cannot be found
+ * (a selection that includes a pill, say).
+ */
+export function locateInDraft(draftText: string, selected: string, before: string): { from: number; to: number } | null {
+  const text = normalizeSelectionText(selected);
+  if (text === "") return null;
+  const inDraft = occurrences(draftText, text);
+  if (inDraft.length === 0) return null;
+  const preceding = occurrences(before, text).filter((hit) => hit.index + hit.length <= before.length).length;
+  const hit = inDraft[Math.min(preceding, inDraft.length - 1)] as { index: number; length: number };
+  return { from: hit.index, to: hit.index + hit.length };
+}
+
+/**
+ * Like `composeDraft`, with the selection as the skill's parameter:
+ * - outside the composer: pill + args + the selected text, then the draft;
+ * - inside the composer: pill + args directly before the selected range, the
+ *   rest of the draft where it was (pills before it keep their place, pills
+ *   after it move with their text);
+ * - nothing usable selected (or not found in the draft): exactly `composeDraft`.
+ */
+export function composeWithSelection<M extends DraftMention>(
+  draft: DraftLike<M>,
+  button: Pick<SkillButton, "args">,
+  command: SkillCommand,
+  selection: SelectionInput | null,
+  options: { trimEnd?: boolean } = {},
+): { text: string; mentions: Array<M | DraftMention> } {
+  const selected = selection === null ? "" : normalizeSelectionText(selection.text);
+  if (selection === null || selected === "") return composeDraft(draft, button, command, options);
+  const pillText = `/${command.name}`;
+  const prefix = button.args === "" ? `${pillText} ` : `${pillText} ${button.args} `;
+  const pill: DraftMention = {
+    kind: "command",
+    trigger: "/",
+    from: 0,
+    to: pillText.length,
+    label: command.name,
+    name: command.name,
+    source: command.source,
+    origin: command.origin,
+    argumentHint: command.argumentHint,
+  };
+  if (selection.kind === "outside") {
+    const leading = draft.mentions.find((mention) => mention.kind === "command" && mention.from === 0);
+    const rest = draft.text.slice(leading?.to ?? 0).trimStart();
+    const head = `${prefix}${selected}`;
+    const gap = rest === "" ? "" : selected.includes("\n") ? "\n" : " ";
+    const shift = head.length + gap.length - (draft.text.length - rest.length);
+    const others = draft.mentions
+      .filter((mention) => mention !== leading)
+      .map((mention) => ({ ...mention, from: mention.from + shift, to: mention.to + shift }));
+    return { text: `${head}${gap}${rest}`, mentions: [pill, ...others] };
+  }
+  const located = locateInDraft(draft.text, selection.text, selection.before);
+  if (located === null) return composeDraft(draft, button, command, options);
+  // Never start a pill inside another: back up to the start of the mention the range begins in.
+  const inside = draft.mentions.find((mention) => located.from > mention.from && located.from < mention.to);
+  const at = inside === undefined ? located.from : inside.from;
+  const moved = draft.mentions.map((mention) =>
+    mention.from >= at ? { ...mention, from: mention.from + prefix.length, to: mention.to + prefix.length } : mention,
+  );
+  const placed: DraftMention = { ...pill, from: at, to: at + pillText.length };
+  return {
+    text: `${draft.text.slice(0, at)}${prefix}${draft.text.slice(at)}`,
+    mentions: [...moved, placed].sort((a, b) => a.from - b.from),
+  };
+}
+
+/** A captured selection is still usable only while the draft still holds its text where it was. */
+export function isSelectionLive(selection: SelectionInput | null, draftText: string): boolean {
+  if (selection === null || normalizeSelectionText(selection.text) === "") return false;
+  return selection.kind === "outside" || locateInDraft(draftText, selection.text, selection.before) !== null;
+}
