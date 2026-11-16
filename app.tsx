@@ -203,6 +203,29 @@ function availableWidth(root: HTMLElement): { width: number; observe: HTMLElemen
   return { width: Math.max(0, width), observe: [footer, ...layoutChildren(footer), ...layoutChildren(group)] };
 }
 
+/**
+ * bb gives every composer action a 36px slot while its own buttons are 32px, so
+ * a chip row would make the footer 4px taller. Pull the slot's margins in by the
+ * difference, so the composer keeps its height. Returns the undo.
+ */
+function trimSlotHeight(root: HTMLElement): () => void {
+  const none = () => undefined;
+  const group = wrappingRowAbove(root);
+  const slot = group === null ? null : childOf(group, root);
+  if (group === null || slot === null) return none;
+  const others = layoutChildren(group)
+    .filter((child) => child !== slot)
+    .map((child) => child.getBoundingClientRect().height);
+  if (others.length === 0) return none;
+  const extra = slot.getBoundingClientRect().height - Math.max(...others);
+  if (extra <= 0) return none;
+  const previous = slot.style.marginBlock;
+  slot.style.marginBlock = `${-extra / 2}px`;
+  return () => {
+    slot.style.marginBlock = previous;
+  };
+}
+
 const chipClass =
   "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
@@ -211,7 +234,14 @@ function SkillButtonsAction() {
   const { rpc, buttons, collapsed: storedCollapsed, setCollapsed } = useButtons();
   const commands = useCommands(rpc, resolveCommandTarget(composer.scope, composer.selection));
   const portalProps = usePortalScopeProps();
-  const rootRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const untrimRef = useRef<(() => void) | null>(null);
+  const attach = useCallback((element: HTMLDivElement | null) => {
+    untrimRef.current?.();
+    untrimRef.current = null;
+    rootRef.current = element;
+    if (element !== null) untrimRef.current = trimSlotHeight(element);
+  }, []);
   const measureRef = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState<number | null>(null);
   const busy = composer.isSubmitting;
@@ -269,7 +299,7 @@ function SkillButtonsAction() {
   if (list.length === 0) return null;
   if (collapsed) {
     return (
-      <div className="flex min-w-0 flex-1 items-center justify-end">
+      <div ref={attach} className="flex min-w-0 flex-1 items-center justify-end">
         <button type="button" className={cn(chipClass, "px-2")} aria-label="Show skill buttons" title="Show skill buttons" onClick={() => setCollapsed(false)}>
           <Icon name="Zap" className="size-3.5" />
           <span>{list.length}</span>
@@ -299,7 +329,7 @@ function SkillButtonsAction() {
   };
 
   return (
-    <div ref={rootRef} className="relative flex min-w-0 flex-1 items-center justify-end" style={{ gap: CHIP_GAP }}>
+    <div ref={attach} className="relative flex min-w-0 flex-1 items-center justify-end" style={{ gap: CHIP_GAP }}>
       {visible.map(chip)}
       {hidden.length === 0 ? null : (
         <DropdownMenu.Root>
