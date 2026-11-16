@@ -28,15 +28,19 @@ composer.
   when the skill is not offered for the thread's provider.
 
 Settings are global; there are no per-project overrides. Chips appear in thread
-composers only (not queued-message editors or the new-thread composer).
+composers and the new-thread composer (not queued-message editors). In the
+new-thread composer the skill list follows the selected provider, project and
+environment, and is re-read when they change; if it cannot be read (for example
+a project with no checkout), the chips stay enabled and the skill is assumed to
+exist. `Send` there uses the composer's normal submit, which creates the thread.
 
 ## How it works
 
 - `lib/buttons.ts` — the button schema and 6-button cap, draft composition for
   both modes, the chips/overflow split and the collapse rules. Pure; covered by `test/`.
 - `server.ts` — stores the list in `bb.storage.kv` (RPC `getButtons` /
-  `saveButtons`, `setCollapsed`, realtime `buttons-changed`) and lists a thread's commands and
-  skills with `bb.sdk.projects.commands`, as bb's own `/` menu does (RPC
+  `saveButtons`, `setCollapsed`, realtime `buttons-changed`) and lists the commands and
+  skills for a thread or a new-thread selection with `bb.sdk.projects.commands`, as bb's own `/` menu does (RPC
   `listCommands`, cached 30 s).
 - `app.tsx` — `app.composer.customize({ actions })` for the chips and
   `app.slots.settingsSection` for the settings. The chip row is measured against
