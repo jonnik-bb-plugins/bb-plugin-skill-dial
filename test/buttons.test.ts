@@ -1,0 +1,123 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  canAddButton,
+  chipLabel,
+  composeDraft,
+  MAX_BUTTONS,
+  readStoredButtons,
+  validateButtons,
+  visibleChipCount,
+  type SkillCommand,
+} from "../lib/buttons.ts";
+
+const command: SkillCommand = { name: "review", source: "skill", origin: "user", argumentHint: null };
+const button = (n: number, patch: Record<string, unknown> = {}) => ({
+  id: `b${n}`,
+  skill: "review",
+  emoji: "",
+  label: `L${n}`,
+  mode: "insert",
+  args: "",
+  ...patch,
+});
+
+test("validation accepts up to six buttons and rejects a seventh", () => {
+  const six = Array.from({ length: MAX_BUTTONS }, (_, i) => button(i));
+  assert.equal(validateButtons(six).ok, true);
+  const seven = [...six, button(6)];
+  const result = validateButtons(seven);
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error, /At most 6 buttons/);
+  assert.equal(canAddButton(5), true);
+  assert.equal(canAddButton(6), false);
+});
+
+test("validation normalizes the skill name and args", () => {
+  const result = validateButtons([button(1, { skill: "  /code-review ", args: " --fast \n now " })]);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.buttons[0]?.skill, "code-review");
+    assert.equal(result.buttons[0]?.args, "--fast now");
+  }
+});
+
+test("validation rejects bad input with a button number", () => {
+  for (const bad of [
+    button(1, { skill: "  " }),
+    button(1, { skill: "two words" }),
+    button(1, { mode: "run" }),
+    button(1, { label: "x".repeat(21) }),
+    button(1, { args: "x".repeat(501) }),
+    button(1, { id: "bad id" }),
+  ]) {
+    const result = validateButtons([bad]);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /^Button 1: /);
+  }
+  assert.equal(validateButtons([button(1), button(1)]).ok, false);
+  assert.equal(validateButtons("nope").ok, false);
+});
+
+test("stored data is read tolerantly and capped", () => {
+  const stored = [button(1), { nonsense: true }, button(1), ...Array.from({ length: 9 }, (_, i) => button(i + 10))];
+  const buttons = readStoredButtons(stored);
+  assert.equal(buttons.length, MAX_BUTTONS);
+  assert.equal(new Set(buttons.map((b) => b.id)).size, MAX_BUTTONS);
+  assert.deepEqual(readStoredButtons(undefined), []);
+});
+
+test("chip label falls back to the skill name", () => {
+  assert.equal(chipLabel({ emoji: "🔍", label: "Review", skill: "review" }), "🔍 Review");
+  assert.equal(chipLabel({ emoji: "🔍", label: "", skill: "review" }), "🔍");
+  assert.equal(chipLabel({ emoji: "", label: "", skill: "review" }), "review");
+});
+
+test("insert into an empty draft: pill first, trailing space to keep typing", () => {
+  const draft = composeDraft({ text: "", mentions: [] }, { args: "" }, command);
+  assert.equal(draft.text, "/review ");
+  assert.deepEqual(draft.mentions.map((m) => [m.kind, m.from, m.to, m.label]), [["command", 0, 7, "review"]]);
+});
+
+test("insert with args and existing text keeps the text after the args", () => {
+  const draft = composeDraft({ text: "the login page", mentions: [] }, { args: "--deep" }, command);
+  assert.equal(draft.text, "/review --deep the login page");
+});
+
+test("other mentions move with their text", () => {
+  const mention = { from: 4, to: 9, label: "a.ts", kind: "path" };
+  const draft = composeDraft({ text: "see @a.ts", mentions: [mention] }, { args: "" }, command);
+  assert.equal(draft.text, "/review see @a.ts");
+  const moved = draft.mentions[1];
+  assert.equal(draft.text.slice(moved?.from, moved?.to), "@a.ts");
+  assert.equal(moved?.from, 12);
+});
+
+test("an existing leading command pill is replaced, not duplicated", () => {
+  const leading = { from: 0, to: 5, label: "plan", kind: "command" };
+  const draft = composeDraft({ text: "/plan do it", mentions: [leading] }, { args: "" }, command);
+  assert.equal(draft.text, "/review do it");
+  assert.equal(draft.mentions.length, 1);
+  assert.equal(draft.mentions[0]?.label, "review");
+});
+
+test("send into an empty draft submits the skill alone, without trailing space", () => {
+  const draft = composeDraft({ text: "  ", mentions: [] }, { args: "" }, command, { trimEnd: true });
+  assert.equal(draft.text, "/review");
+  const withArgs = composeDraft({ text: "", mentions: [] }, { args: "a b" }, command, { trimEnd: true });
+  assert.equal(withArgs.text, "/review a b");
+});
+
+test("send with draft text prepends the pill and args as one message", () => {
+  const draft = composeDraft({ text: "fix the bug", mentions: [] }, { args: "--x" }, command, { trimEnd: true });
+  assert.equal(draft.text, "/review --x fix the bug");
+});
+
+test("visibleChipCount shows all chips that fit and collapses the rest", () => {
+  assert.equal(visibleChipCount([50, 50, 50], 200, 4, 28), 3);
+  assert.equal(visibleChipCount([50, 50, 50], 120, 4, 28), 1);
+  assert.equal(visibleChipCount([50, 50, 50], 20, 4, 28), 0);
+  assert.equal(visibleChipCount([], 0, 4, 28), 0);
+  // all fit exactly: no overflow trigger needed
+  assert.equal(visibleChipCount([50, 50], 104, 4, 28), 2);
+});
