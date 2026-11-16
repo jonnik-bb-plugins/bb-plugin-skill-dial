@@ -370,3 +370,34 @@ export function isSelectionLive(selection: SelectionInput | null, draftText: str
 export function keepComposerFocus(event: { preventDefault(): void }): void {
   event.preventDefault();
 }
+
+/** Below this composer width (px) chips show only their emoji. */
+export const COMPACT_COMPOSER_MAX_WIDTH = 560;
+const COMPACT_TEXT_LIMIT = 6;
+
+/** Whether the composer is narrow enough for emoji-only chips; false when its width is unknown. */
+export function isCompactComposer(width: number | null): boolean {
+  return width !== null && width > 0 && width < COMPACT_COMPOSER_MAX_WIDTH;
+}
+
+function truncate(text: string, limit: number): string {
+  const characters = Array.from(text);
+  return characters.length <= limit ? text : `${characters.slice(0, limit).join("").trimEnd()}…`;
+}
+
+/** What a compact chip shows: its emoji, else its label (or the skill name) cut to a few characters. */
+export function compactChipText(button: Pick<SkillButton, "emoji" | "label" | "skill">): string {
+  if (button.emoji !== "") return button.emoji;
+  return truncate(button.label !== "" ? button.label : button.skill, COMPACT_TEXT_LIMIT);
+}
+
+/** The accessible name of a chip: `/skill`, plus the label when the chip does not show it. */
+export function chipAccessibleName(button: Pick<SkillButton, "label" | "skill">, compact: boolean): string {
+  return compact && button.label !== "" ? `/${button.skill} (${button.label})` : `/${button.skill}`;
+}
+
+/** The tooltip of a chip: what it does; in compact mode led by the label it does not show. */
+export function chipTooltip(button: Pick<SkillButton, "label" | "skill" | "mode" | "args">, compact: boolean): string {
+  const action = `${button.mode === "send" ? "Send" : "Insert"} /${button.skill}${button.args === "" ? "" : ` ${button.args}`}`;
+  return compact && button.label !== "" ? `${button.label} — ${action}` : action;
+}

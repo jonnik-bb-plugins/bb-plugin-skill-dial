@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  chipAccessibleName,
   chipLabel,
+  chipTooltip,
+  compactChipText,
+  COMPACT_COMPOSER_MAX_WIDTH,
+  isCompactComposer,
   assumedSkillCommand,
   fadeMask,
   isWheelNotch,
@@ -352,4 +357,37 @@ test("the strip has no scroll arrow buttons", async () => {
   const { readFileSync } = await import("node:fs");
   const source = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /Scroll skill buttons/);
+});
+
+test("the composer's own width decides compact mode", () => {
+  assert.equal(COMPACT_COMPOSER_MAX_WIDTH, 560);
+  assert.equal(isCompactComposer(358), true);
+  assert.equal(isCompactComposer(559.5), true);
+  assert.equal(isCompactComposer(560), false);
+  assert.equal(isCompactComposer(726), false);
+  assert.equal(isCompactComposer(null), false);
+  assert.equal(isCompactComposer(0), false);
+});
+
+test("a compact chip shows its emoji only", () => {
+  assert.equal(compactChipText({ emoji: "🔍", label: "Review", skill: "code-review" }), "🔍");
+  assert.equal(compactChipText({ emoji: "🦾 🤖", label: "SPA", skill: "x" }), "🦾 🤖");
+});
+
+test("without an emoji a compact chip shows the label cut to six characters, else the skill", () => {
+  assert.equal(compactChipText({ emoji: "", label: "Review", skill: "s" }), "Review");
+  assert.equal(compactChipText({ emoji: "", label: "Simplify", skill: "s" }), "Simpli…");
+  assert.equal(compactChipText({ emoji: "", label: "", skill: "superpowers:brainstorming" }), "superp…");
+  assert.equal(compactChipText({ emoji: "", label: "", skill: "plan" }), "plan");
+  assert.equal(compactChipText({ emoji: "", label: "Ünïcode✨✨✨", skill: "s" }), "Ünïcod…");
+});
+
+test("label and skill move to the accessible name and tooltip in compact mode", () => {
+  const button = { label: "Debug", skill: "debug", mode: "insert" as const, args: "--brief", emoji: "🪲" };
+  assert.equal(chipAccessibleName(button, false), "/debug");
+  assert.equal(chipAccessibleName(button, true), "/debug (Debug)");
+  assert.equal(chipAccessibleName({ ...button, label: "" }, true), "/debug");
+  assert.equal(chipTooltip(button, false), "Insert /debug --brief");
+  assert.equal(chipTooltip(button, true), "Debug — Insert /debug --brief");
+  assert.equal(chipTooltip({ ...button, label: "", mode: "send", args: "" }, true), "Send /debug");
 });
