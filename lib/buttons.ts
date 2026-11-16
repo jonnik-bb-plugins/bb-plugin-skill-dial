@@ -166,3 +166,26 @@ export function newButtonId(existing: readonly string[], random: () => string): 
     if (!existing.includes(id)) return id;
   }
 }
+
+/** The collapse toggle is offered only when there is more than one button to hide. */
+export function showToggle(buttonCount: number): boolean {
+  return buttonCount > 1;
+}
+
+export const collapsedSchema = z.boolean();
+
+/** Persisted collapse state; anything unreadable means expanded, the default. */
+export function readStoredCollapsed(value: unknown): boolean {
+  const parsed = collapsedSchema.safeParse(value);
+  return parsed.success ? parsed.data : false;
+}
+
+/** Whether the chips are hidden: a stored "collapsed" only counts while the toggle exists. */
+export function isCollapsed(buttonCount: number, stored: boolean): boolean {
+  return showToggle(buttonCount) && stored;
+}
+
+/** Width left for chips (and the "⋯" trigger) once the chevron toggle takes its share. */
+export function roomForChips(available: number, hasToggle: boolean, gap: number, toggleWidth: number): number {
+  return hasToggle ? Math.max(0, available - toggleWidth - gap) : available;
+}

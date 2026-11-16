@@ -4,6 +4,10 @@ import {
   canAddButton,
   chipLabel,
   composeDraft,
+  isCollapsed,
+  readStoredCollapsed,
+  roomForChips,
+  showToggle,
   MAX_BUTTONS,
   readStoredButtons,
   validateButtons,
@@ -120,4 +124,37 @@ test("visibleChipCount shows all chips that fit and collapses the rest", () => {
   assert.equal(visibleChipCount([], 0, 4, 28), 0);
   // all fit exactly: no overflow trigger needed
   assert.equal(visibleChipCount([50, 50], 104, 4, 28), 2);
+});
+
+test("toggle is shown only with more than one button", () => {
+  assert.equal(showToggle(0), false);
+  assert.equal(showToggle(1), false);
+  assert.equal(showToggle(2), true);
+  assert.equal(showToggle(MAX_BUTTONS), true);
+});
+
+test("collapse state defaults to expanded when nothing usable is stored", () => {
+  assert.equal(readStoredCollapsed(undefined), false);
+  assert.equal(readStoredCollapsed(null), false);
+  assert.equal(readStoredCollapsed("true"), false);
+  assert.equal(readStoredCollapsed({}), false);
+  assert.equal(readStoredCollapsed(false), false);
+  assert.equal(readStoredCollapsed(true), true);
+});
+
+test("stored collapse only applies while the toggle exists", () => {
+  assert.equal(isCollapsed(3, true), true);
+  assert.equal(isCollapsed(3, false), false);
+  assert.equal(isCollapsed(2, true), true);
+  assert.equal(isCollapsed(1, true), false);
+  assert.equal(isCollapsed(0, true), false);
+});
+
+test("the toggle's width is reserved before chips are fitted", () => {
+  assert.equal(roomForChips(200, false, 4, 24), 200);
+  assert.equal(roomForChips(200, true, 4, 24), 172);
+  assert.equal(roomForChips(10, true, 4, 24), 0);
+  // 3 chips of 50 + 2 gaps = 158 fit in 200 alone, but not beside the toggle in 150
+  assert.equal(visibleChipCount([50, 50, 50], roomForChips(200, false, 4, 24), 4, 28), 3);
+  assert.equal(visibleChipCount([50, 50, 50], roomForChips(170, true, 4, 24), 4, 28), 2);
 });
