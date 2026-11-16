@@ -2,7 +2,15 @@
 // resolves which skills the thread's provider offers, as bb's own `/` menu does.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { buttonSchema, buttonsSchema, MAX_BUTTONS, readStoredButtons, type SkillButton } from "./lib/buttons.ts";
+import {
+  buttonSchema,
+  buttonsSchema,
+  collapsedSchema,
+  MAX_BUTTONS,
+  readStoredButtons,
+  readStoredCollapsed,
+  type SkillButton,
+} from "./lib/buttons.ts";
 
 const commandSchema = z.object({
   name: z.string(),
@@ -15,7 +23,12 @@ const commandSchema = z.object({
 export const rpcContract = defineRpcContract({
   getButtons: {
     input: z.null(),
-    output: z.object({ buttons: z.array(buttonSchema) }),
+    output: z.object({ buttons: z.array(buttonSchema), collapsed: collapsedSchema }),
+  },
+  // Global (not per thread) so every browser and device sees the same state.
+  setCollapsed: {
+    input: z.object({ collapsed: collapsedSchema }),
+    output: z.object({ collapsed: collapsedSchema }),
   },
   saveButtons: {
     // `buttonsSchema` enforces the 6-button cap on the server as well.
@@ -31,6 +44,7 @@ export const rpcContract = defineRpcContract({
 });
 
 const BUTTONS_KEY = "buttons";
+const COLLAPSED_KEY = "collapsed";
 const BUTTONS_CHANGED = "buttons-changed";
 const COMMANDS_TTL_MS = 30_000;
 
@@ -41,6 +55,10 @@ export default async function plugin(bb: BbPluginApi) {
 
   async function readButtons(): Promise<SkillButton[]> {
     return readStoredButtons(await bb.storage.kv.get<unknown>(BUTTONS_KEY));
+  }
+
+  async function readCollapsed(): Promise<boolean> {
+    return readStoredCollapsed(await bb.storage.kv.get<unknown>(COLLAPSED_KEY));
   }
 
   const cache = new Map<string, { at: number; commands: Command[] }>();
@@ -74,7 +92,12 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.rpc.register(rpcContract, {
-    getButtons: async () => ({ buttons: await readButtons() }),
+    getButtons: async () => ({ buttons: await readButtons(), collapsed: await readCollapsed() }),
+    setCollapsed: async ({ collapsed }) => {
+      await bb.storage.kv.set(COLLAPSED_KEY, collapsed);
+      bb.realtime.publish(BUTTONS_CHANGED, { collapsed });
+      return { collapsed };
+    },
     saveButtons: async ({ buttons }) => {
       const stored = buttons.slice(0, MAX_BUTTONS);
       await bb.storage.kv.set(BUTTONS_KEY, stored);

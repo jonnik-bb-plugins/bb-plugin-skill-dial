@@ -21,11 +21,14 @@ import {
   canAddButton,
   chipLabel,
   composeDraft,
+  isCollapsed,
   MAX_ARGS,
   MAX_BUTTONS,
   MAX_EMOJI,
   MAX_LABEL,
   newButtonId,
+  roomForChips,
+  showToggle,
   validateButtons,
   visibleChipCount,
   type ButtonMode,
@@ -38,17 +41,39 @@ type CommandInfo = SkillCommand & { description: string | null };
 
 const CHIP_GAP = 4;
 const OVERFLOW_WIDTH = 28;
+const TOGGLE_WIDTH = 24;
 
-/** The saved buttons, kept current by the server's "buttons-changed" signal. */
+/** The saved buttons and collapse state, kept current by the server's "buttons-changed" signal. */
 function useButtons() {
   const rpc = useRpc<typeof rpcContract>();
   const [buttons, setButtons] = useState<SkillButton[] | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const refetch = useCallback(() => {
-    rpc.call("getButtons", null).then((result) => setButtons(result.buttons), () => undefined);
+    rpc.call("getButtons", null).then(
+      (result) => {
+        setButtons(result.buttons);
+        setCollapsed(result.collapsed);
+      },
+      () => undefined,
+    );
   }, [rpc]);
   useEffect(refetch, [refetch]);
   useRealtime("buttons-changed", refetch);
-  return { rpc, buttons, setButtons, refetch };
+  // Optimistic: flip at once, persist on the server, put it back if that fails.
+  const setCollapsedOptimistic = useCallback(
+    (next: boolean) => {
+      setCollapsed(next);
+      rpc.call("setCollapsed", { collapsed: next }).then(
+        () => undefined,
+        (cause) => {
+          setCollapsed(!next);
+          toast.error(cause instanceof Error ? cause.message : "Could not save the skill buttons state");
+        },
+      );
+    },
+    [rpc],
+  );
+  return { rpc, buttons, setButtons, refetch, collapsed, setCollapsed: setCollapsedOptimistic };
 }
 
 type CommandsState =
@@ -163,7 +188,7 @@ const chipClass =
 
 function SkillButtonsAction() {
   const composer = useComposer();
-  const { rpc, buttons } = useButtons();
+  const { rpc, buttons, collapsed: storedCollapsed, setCollapsed } = useButtons();
   const threadId = composer.scope.kind === "thread" ? composer.scope.threadId : null;
   const commands = useCommands(rpc, threadId);
   const portalProps = usePortalScopeProps();
@@ -173,6 +198,8 @@ function SkillButtonsAction() {
   const busy = composer.isSubmitting;
   const list = buttons ?? [];
   const signature = list.map((button) => `${button.id}:${chipLabel(button)}`).join("|");
+  const toggle = showToggle(list.length);
+  const collapsed = isCollapsed(list.length, storedCollapsed);
 
   // Fit as many chips as the row has room for; the rest go to the "⋯" menu.
   useLayoutEffect(() => {
@@ -184,7 +211,7 @@ function SkillButtonsAction() {
     const update = () => {
       const widths = Array.from(measure.children).map((child) => (child as HTMLElement).getBoundingClientRect().width);
       const room = availableWidth(root);
-      setShown(room === null ? widths.length : visibleChipCount(widths, room.width, CHIP_GAP, OVERFLOW_WIDTH));
+      setShown(room === null ? widths.length : visibleChipCount(widths, roomForChips(room.width, toggle, CHIP_GAP, TOGGLE_WIDTH), CHIP_GAP, OVERFLOW_WIDTH));
       if (room !== null) {
         for (const element of room.observe) {
           if (!observed.includes(element)) {
@@ -197,7 +224,7 @@ function SkillButtonsAction() {
     observer.observe(root);
     update();
     return () => observer.disconnect();
-  }, [signature]);
+  }, [signature, toggle, collapsed]);
 
   const run = useCallback(
     async (button: SkillButton) => {
@@ -221,6 +248,16 @@ function SkillButtonsAction() {
   );
 
   if (list.length === 0) return null;
+  if (collapsed) {
+    return (
+      <div className="flex min-w-0 flex-1 items-center justify-end">
+        <button type="button" className={cn(chipClass, "px-2")} aria-label="Show skill buttons" title="Show skill buttons" onClick={() => setCollapsed(false)}>
+          <Icon name="Zap" className="size-3.5" />
+          <span>{list.length}</span>
+        </button>
+      </div>
+    );
+  }
   const count = shown ?? list.length;
   const visible = list.slice(0, count);
   const hidden = list.slice(count);
@@ -272,6 +309,11 @@ function SkillButtonsAction() {
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       )}
+      {toggle ? (
+        <button type="button" className={cn(chipClass, "justify-center px-0")} style={{ width: TOGGLE_WIDTH }} aria-label="Hide skill buttons" title="Hide skill buttons" onClick={() => setCollapsed(true)}>
+          <Icon name="ChevronRight" className="size-3.5" />
+        </button>
+      ) : null}
       {/* Off-screen copy at natural width, so the row can be measured without flicker. */}
       <div ref={measureRef} aria-hidden="true" className="pointer-events-none invisible absolute left-0 top-0 flex h-0 w-max overflow-hidden" style={{ gap: CHIP_GAP }}>
         {list.map((button) => (
